@@ -115,7 +115,7 @@ class FileRenamer:
     # Common words that should not be capitalized in titles
     LOWERCASE_WORDS = {
         'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'if', 'in',
-        'is', 'of', 'on', 'or', 'the', 'to', 'up', 'yet'
+        'is', 'of', 'on', 'or', 'the', 'to', 'up', 'with', 'yet'
     }
 
     def __init__(self, directory: str = '.', dry_run: bool = False):
@@ -157,26 +157,37 @@ class FileRenamer:
         preserve_name_case = extension.lower() in self.PRESERVE_CASE_EXTENSIONS
 
         # First normalize all whitespace to single spaces
+        print(f"\nBefore whitespace normalization: {name!r}")
         name = re.sub(r'[\n\r\t\f\v]+', ' ', name)  # Convert newlines and other whitespace to spaces
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
+        print(f"After whitespace normalization: {name!r}")
 
         # Replace special characters
+        print(f"Before special char replacement: {name!r}")
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
             if original_char == '...':
                 # Handle ellipsis separately to avoid over-replacement
-                print(f"Before ellipsis replacement: {name}")
+                print(f"Before ellipsis replacement: {name!r}")
                 name = re.sub(r'\.{3,}', replacement_char, name)
-                print(f"After ellipsis replacement: {name}")
+                print(f"After ellipsis replacement: {name!r}")
             else:
                 # Replace multiple occurrences with single replacement
                 name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
+        print(f"After special char replacement: {name!r}")
 
         name = name.strip()  # Remove leading/trailing spaces
+        print(f"After strip: {name!r}")
 
-        # Only remove trailing periods and ellipsis, preserve other special characters
+        # Only remove trailing periods and ellipsis if they're actually at the end
+        # (no more text after them)
         while name and (name.endswith('.') or name.endswith('…')):
-            name = name.rstrip('.…')
-            name = name.rstrip()  # Remove any spaces revealed by removing periods
+            # Check if there's more text after the trailing dots
+            rest = name.rstrip('.…').strip()
+            if not rest:  # If empty, this is truly trailing
+                name = rest
+            else:
+                break  # There's more text after, so keep the periods/ellipsis
+        print(f"After trailing cleanup: {name!r}")
 
         # For normal files, apply title case to the name
         # For known extensions (like .py files), keep original name case
@@ -214,8 +225,9 @@ class FileRenamer:
                 # Word should be lowercase if:
                 # 1. It's in our LOWERCASE_WORDS set
                 # 2. It's not the first word
-                # 3. It's not the last word
-                # 4. It's between spaces (not after special chars)
+                # 3. It's not after a period or ellipsis
+                # 4. It's not the last word
+                # 5. It's between spaces (not after special chars)
                 print(f"\nWord: {word!r}")
                 print(f"In LOWERCASE_WORDS: {word in self.LOWERCASE_WORDS}")
                 print(f"Not first word: {bool(titled_parts)}")
@@ -232,8 +244,16 @@ class FileRenamer:
                        titled_parts[-2] not in self.word_boundary_chars - {' '})))  # Not after special char
                 )
 
+                # Always capitalize after a period/ellipsis or if it's the first/last word
+                should_capitalize = (
+                    not titled_parts or  # First word
+                    prev_part in {'.', '…'} or  # After period or ellipsis
+                    word == last_real_word  # Last word
+                )
+
                 if (word in self.LOWERCASE_WORDS and
                     titled_parts and      # Not first word
+                    not should_capitalize and  # Not after period/ellipsis
                     word != last_real_word and  # Not the last word
                     is_between_spaces):   # Between spaces, not after special char
                     print(f"Should be lowercase: True")
@@ -247,7 +267,7 @@ class FileRenamer:
 
         # If original had no spaces, remove spaces around special characters
         if ' ' not in filename:
-            for char in self.special_chars - {' '}:  # Don't process space itself
+            for char in self.special_chars - {' '}:
                 name = name.replace(f' {char} ', char)
                 name = name.replace(f' {char}', char)
                 name = name.replace(f'{char} ', char)
