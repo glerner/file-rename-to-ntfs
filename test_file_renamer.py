@@ -227,7 +227,7 @@ class TestFileRenamer(unittest.TestCase):
         - Trailing periods are removed
         - Trailing ellipsis is removed
         - Only specific special characters are preserved at the end:
-          * Closing brackets (), [], {}
+          * Closing brackets (), [], {}, etc (replacements from CHAR_REPLACEMENTS)
           * Exclamation marks !
           * Full-width dollar sign ＄
           * Right double quotation mark "
@@ -244,14 +244,20 @@ class TestFileRenamer(unittest.TestCase):
             ('file... middle text', f'File{ellipsis} Middle Text'),  # Keep ellipsis in middle
             ('file(1).', 'File(1)'),  # Remove trailing period but keep parentheses
             ('price$.', f'Price{dollar}'),  # Keep full-width dollar sign but remove period
-            ('file[1].txt....', 'File[1].txt'),  # Keep brackets, remove trailing periods
-            ('script.py"...', f'script.py{quote}'),  # Keep quote but remove trailing periods
-            ('log|...', 'Log'),  # Remove vertical line and trailing periods
+            ('file[1].txt....', 'File[1].txt'),  # Keep brackets, remove trailing periods. That leaves a new file extension '.txt'
+            ('script."unknown"...', f'Script.{quote}Unknown{quote}'),  # Keep quote but remove trailing periods
+            ('script.py"...', f'script.py'),  # Remove quote and remove trailing periods, recognize new file extension '.py'
+            ('log|...', 'Log'),  # Remove vertical line or other special character and trailing periods
             ('test<...', 'Test'),  # Remove angle bracket and trailing periods
+            ('test\\...', 'Test'),  # Remove backslash and trailing periods
+            ('test...', 'Test'),  # Remove backslash and trailing periods
+            ('test!', 'Test!'),  # Keep exclamation mark at end
             ('Clark Gable in "Gone with the Wind".png', f'Clark Gable in {quote}Gone with the Wind{quote}.png'),  # Keep quotes even at the end
             ('script.py', 'script.py'),  # Don't change casing of known file extensions
             ('data.json}...', 'Data.json'),  # Remove closing brace, remove trailing periods
             ('data.json', 'data.json'),  # Don't change casing of known file extensions
+            ('Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4',
+             'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),  # Keep capitalization after parentheses
         ]
 
         for original, expected in test_cases:

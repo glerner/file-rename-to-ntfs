@@ -28,7 +28,16 @@ import unicodedata
 import logging
 
 class FileRenamer:
-    """Handles the conversion of filenames from Ext4 to NTFS format."""
+    """Handles the conversion of filenames from Ext4 to NTFS format.
+
+    Extension Rules:
+    1. Extensions cannot contain spaces
+    2. Extension is the part after the last valid period
+    3. Trailing periods are not treated as extension separators
+    4. For known extensions (like .py, .js):
+       - Keep the original filename case
+       - Always use lowercase for the extension
+    """
 
     # Character substitution mappings
     CHAR_REPLACEMENTS = {
@@ -46,13 +55,14 @@ class FileRenamer:
         '...': '…',  # Replace three or more periods with ellipsis character
     }
 
-    # Characters that are allowed to be preserved at the end of filenames
-    # Should always use the replacement characters from CHAR_REPLACEMENTS
+    # Characters that are allowed at the end of a filename
     ALLOWED_TRAILING_CHARS = {
         ')', ']', '}',  # Closing brackets
         '!',            # Exclamation mark (already decided to keep)
         '＄',           # Full Width Dollar Sign (from CHAR_REPLACEMENTS)
         '＂',           # Full Width Quotation Mark (from CHAR_REPLACEMENTS)
+        '❭',           # Right Black Lenticular Bracket (closing)
+        '⁇',           # Double Question Mark (like exclamation)
     }
 
     # Only include special characters that should act as word boundaries
@@ -63,7 +73,7 @@ class FileRenamer:
         '…'                              # Ellipsis
     }
 
-    # File extensions where we want to preserve the original case
+    # File extensions where we want to preserve the original case of the base name
     PRESERVE_CASE_EXTENSIONS = {
         # Web
         'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'vue', 'php',
@@ -78,6 +88,28 @@ class FileRenamer:
         'ini', 'conf', 'cfg', 'env',
         # Build
         'make', 'cmake', 'gradle', 'pom',
+    }
+
+    # Known file extensions that should be recognized and moved
+    KNOWN_EXTENSIONS = PRESERVE_CASE_EXTENSIONS | {
+        # Basic text and documents
+        'txt', 'rtf', 'pdf',
+        'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',  # Microsoft Office
+        'odt', 'ods', 'odp',  # OpenDocument (LibreOffice)
+        # Images
+        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'svg',
+        # Audio
+        'mp3', 'wav', 'ogg', 'flac', 'm4a', 'wma',
+        # Video
+        'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm',
+        # Archives
+        'zip', 'rar', 'tar', 'gz', '7z',
+        # Database
+        'db', 'sqlite', 'mdb',
+        # Email
+        'eml', 'msg',
+        # Font
+        'ttf', 'otf', 'woff', 'woff2',
     }
 
     @classmethod
@@ -139,6 +171,39 @@ class FileRenamer:
         self.split_pattern = f"([{''.join(re.escape(c) for c in split_chars)}])"
         self.special_chars = set(special_chars)  # For faster lookups
 
+    def _clean_trailing_chars(self, text: str, debug_prefix: str = '') -> str:
+        """Clean trailing special characters from text.
+
+        Args:
+            text: Text to clean
+            debug_prefix: Optional prefix for debug output
+
+        Returns:
+            Cleaned text with trailing special characters removed
+        """
+        if debug_prefix:
+            print(f"{debug_prefix}Before trailing cleanup:        {text!r}")
+
+        while text:
+            if text.endswith('.') or text.endswith('…'):
+                # Check if there's more text after the trailing dots/ellipsis
+                rest = text.rstrip('.…').strip()
+                if not rest:  # If empty, this was truly trailing
+                    text = rest
+                    break
+                # If what's left ends in an allowed char or doesn't end in period/ellipsis, we're done
+                if not (rest.endswith('.') or rest.endswith('…')):
+                    text = rest
+                    break
+                # Otherwise keep going (more trailing periods/ellipsis to remove)
+                text = rest
+            else:
+                break  # No trailing periods or ellipsis
+
+        if debug_prefix:
+            print(f"{debug_prefix}After trailing cleanup:         {text!r}\n")
+        return text
+
     def _clean_filename(self, filename: str) -> str:
         """Clean filename to be NTFS-compatible."""
         try:
@@ -146,61 +211,99 @@ class FileRenamer:
         except UnicodeEncodeError as e:
             raise ValueError(f"Input filename contains invalid characters: {e}")
 
-        # Split into name and extension
-        name_parts = filename.rsplit('.', 1)
-        name = name_parts[0]
-        extension = name_parts[1].lower() if len(name_parts) > 1 else ''
+        print(f"\n{'='*50}")
+        print(f"Starting to process: {filename!r}")
+        print(f"{'='*50}\n")
 
-        # For known file extensions (like .py, .js, .css):
+        # Split into name and extension with rules:
+        # 1. Extensions cannot contain spaces
+        # 2. Don't treat trailing periods as extension separators
+        # 3. Extension comes after the last valid period
+        if filename.strip().endswith('.'):
+            # If filename ends with periods, don't treat them as extension separator
+            name = filename
+            extension = ''
+        else:
+            # Find last period that could be a valid extension separator
+            # (not part of trailing periods and not followed by space)
+            last_period = -1
+            for i in range(len(filename)-1, -1, -1):
+                if filename[i] == '.' and (i == len(filename)-1 or filename[i+1] != '.'):
+                    potential_ext = filename[i+1:]
+                    if ' ' not in potential_ext:  # Extension cannot contain spaces
+                        last_period = i
+                        break
+
+            if last_period != -1:
+                name = filename[:last_period]
+                extension = filename[last_period+1:]
+            else:
+                name = filename
+                extension = ''
+
+        # For known file extensions (like .py, .js):
         # - Keep the original filename case (don't title case it)
         # - Always use lowercase for the extension
         preserve_name_case = extension.lower() in self.PRESERVE_CASE_EXTENSIONS
 
         # First normalize all whitespace to single spaces
-        print(f"\nBefore whitespace normalization: {name!r}")
+        print(f"Splitting name: {name!r} (extension: {extension!r})")
+        print(f"Before whitespace normalization: {name!r}")
         name = re.sub(r'[\n\r\t\f\v]+', ' ', name)  # Convert newlines and other whitespace to spaces
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
-        print(f"After whitespace normalization: {name!r}")
+        print(f"After whitespace normalization:  {name!r}\n")
 
         # Replace special characters
         print(f"Before special char replacement: {name!r}")
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
             if original_char == '...':
                 # Handle ellipsis separately to avoid over-replacement
-                print(f"Before ellipsis replacement: {name!r}")
+                print(f"Before ellipsis replacement:    {name!r}")
                 name = re.sub(r'\.{3,}', replacement_char, name)
-                print(f"After ellipsis replacement: {name!r}")
+                print(f"After ellipsis replacement:     {name!r}")
             else:
                 # Replace multiple occurrences with single replacement
                 name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
-        print(f"After special char replacement: {name!r}")
+        print(f"After special char replacement:  {name!r}\n")
 
         name = name.strip()  # Remove leading/trailing spaces
-        print(f"After strip: {name!r}")
+        print(f"After strip:                    {name!r}\n")
 
-        # Only remove trailing periods and ellipsis if they're actually at the end
-        # (no more text after them)
-        while name and (name.endswith('.') or name.endswith('…')):
-            # Check if there's more text after the trailing dots
-            rest = name.rstrip('.…').strip()
-            if not rest:  # If empty, this is truly trailing
-                name = rest
+        # Remove trailing periods and ellipsis
+        # These are never allowed at the end, regardless of what comes before
+        name = self._clean_trailing_chars(name)
+
+        # If we have no extension but the cleaned name ends in a recognized extension,
+        # move it to be the actual extension (may have affected base name capitalization)
+        if not extension and '.' in name:
+            print(f"\nChecking for recognized extension in cleaned name: {name!r}")
+            # Get the potential extension and clean it of special characters
+            potential_ext = name.split('.')[-1]
+            # Remove any special replacement characters that aren't valid in extensions
+            for orig, repl in self.CHAR_REPLACEMENTS.items():
+                potential_ext = potential_ext.replace(repl, '')
+            potential_ext = potential_ext.lower()
+            print(f"Potential extension found (after cleanup): {potential_ext!r}")
+            if potential_ext in self.KNOWN_EXTENSIONS:
+                name = name[:-(len(potential_ext) + 1)]  # remove .ext
+                name = self._clean_trailing_chars(name, debug_prefix="\n")  # clean trailing chars from new base name
+                extension = potential_ext
+                print(f"Recognized extension moved: name={name!r}, extension={extension!r}")
             else:
-                break  # There's more text after, so keep the periods/ellipsis
-        print(f"After trailing cleanup: {name!r}")
+                print(f"Extension {potential_ext!r} not in recognized list")
 
         # For normal files, apply title case to the name
-        # For known extensions (like .py files), keep original name case
-        if not preserve_name_case:
+        # For files with known extensions, preserve the original name case
+        # Extensions are always lowercased
+        if not extension.lower() in self.PRESERVE_CASE_EXTENSIONS:
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.word_boundary_chars) + '])'
             print(f"\nSplit pattern: {split_pattern}")
             parts = re.split(split_pattern, name)
-            print(f"Parts after split: {parts}")
+            print(f"Parts after split: {parts!r}\n")
+
             titled_parts = []
             prev_part = ''
-
-            # Find the last real word (non-separator) in advance
             last_real_word = None
             for part in parts:
                 if part and len(part) > 1 and not any(c in self.word_boundary_chars for c in part):
@@ -250,6 +353,7 @@ class FileRenamer:
                     prev_part in {'.', '…'} or  # After period or ellipsis
                     word == last_real_word  # Last word
                 )
+                print(f"Should capitalize:    {should_capitalize}\n")
 
                 if (word in self.LOWERCASE_WORDS and
                     titled_parts and      # Not first word
@@ -263,7 +367,11 @@ class FileRenamer:
                     titled_parts.append(word.capitalize())
                 prev_part = part
 
+            # Join the parts back together
             name = ''.join(titled_parts)
+
+            # Do one final check for trailing special characters
+            name = self._clean_trailing_chars(name)
 
         # If original had no spaces, remove spaces around special characters
         if ' ' not in filename:
@@ -273,7 +381,17 @@ class FileRenamer:
                 name = name.replace(f'{char} ', char)
 
         # Always use lowercase for extensions, whether known or unknown
-        return f"{name}.{extension}" if extension else name
+        if extension:
+            result = f"{name}.{extension.lower()}"
+        else:
+            result = name
+
+        print(f"\n{'='*50}")
+        print(f"Finished processing: {filename!r}")
+        print(f"Result: {result!r}")
+        print(f"{'='*50}\n")
+
+        return result
 
     def process_files(self) -> List[Tuple[str, str]]:
         """
