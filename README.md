@@ -44,10 +44,31 @@ python file_renamer.py ~/my_files --dry-run
 
 ## Running Tests
 
-Run the test suite:
+1. Create and activate a virtual environment:
 ```bash
-python -m pytest test_file_renamer.py -v
+python -m venv venv
+source venv/bin/activate
 ```
+
+2. Install test dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Run the tests:
+```bash
+# Run tests with verbose output
+python -m pytest test_file_renamer.py -v
+
+# Run tests with coverage report
+python -m pytest test_file_renamer.py -v --cov=file_renamer
+```
+
+The test suite includes cases for:
+- Special character replacements
+- Title case formatting rules
+- Handling of spaces and punctuation
+- Real-world filename examples
 
 ## Character Substitutions
 
