@@ -16,16 +16,30 @@ Future improvements:
   Current implementation preserves UTF-8/UTF-16 which works well with modern systems,
   including media files from sources like YouTube.
 
-Author: Cascade AI
+Author: George Lerner with Cascade AI
 Date: 2025-01-27
 """
 
 import os
 import re
+import sys
 from typing import Dict, List, Tuple
 from pathlib import Path
 import unicodedata
 import logging
+
+def is_debug_mode() -> bool:
+    """
+    Detect if we're running in debug mode. This is true if:
+    1. Running under unittest (detected via unittest in sys.modules)
+    2. --debug flag was passed
+    3. RENAMER_DEBUG environment variable is set
+    """
+    return (
+        'unittest' in sys.modules or
+        '--debug' in sys.argv or
+        os.environ.get('RENAMER_DEBUG') == '1'
+    )
 
 class FileRenamer:
     """Handles the conversion of filenames from Ext4 to NTFS format.
@@ -142,6 +156,15 @@ class FileRenamer:
         'ttf', 'otf', 'woff', 'woff2',
     }
 
+    # Debug mode flag
+    _debug = is_debug_mode()
+
+    @classmethod
+    def debug_print(cls, *args, **kwargs):
+        """Print only if in debug mode"""
+        if cls._debug:
+            print(*args, **kwargs)
+
     @classmethod
     def validate_replacements(cls) -> None:
         """
@@ -176,8 +199,25 @@ class FileRenamer:
 
     # Common words that should not be capitalized in titles
     LOWERCASE_WORDS = {
-        'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'if', 'in',
-        'is', 'of', 'on', 'or', 'the', 'to', 'up', 'with', 'yet'
+        # Articles
+        'a', 'an', 'the',
+        
+        # Coordinating Conjunctions
+        'and', 'but', 'for', 'nor', 'or', 'so', 'yet',
+        
+        # Short Prepositions (under 5 letters)
+        'at', 'by', 'down', 'for', 'from', 'in', 'into', 
+        'like', 'near', 'of', 'off', 'on', 'onto', 'out',
+        'over', 'past', 'to', 'up', 'upon', 'with',
+        
+        # Common Particles
+        'as', 'if', 'how', 'than', 'vs', 'vs.',
+        
+        # Common Words in Media Titles
+        'part', 'vol', 'vs', 'feat', 'ft', 'remix',
+        
+        # Be Verbs (when not first/last)
+        'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
     }
 
     def __init__(self, directory: str = '.', dry_run: bool = False):
@@ -211,8 +251,7 @@ class FileRenamer:
         Returns:
             Cleaned text with trailing special characters removed
         """
-        if debug_prefix:
-            print(f"{debug_prefix}Before trailing cleanup:        {text!r}")
+        self.debug_print(f"{debug_prefix}Before trailing cleanup:        {text!r}")
 
         while text:
             changed = False
@@ -243,8 +282,7 @@ class FileRenamer:
             if not changed:
                 break  # No more trailing characters to remove
 
-        if debug_prefix:
-            print(f"{debug_prefix}After trailing cleanup:         {text!r}\n")
+        self.debug_print(f"{debug_prefix}After trailing cleanup:         {text!r}\n")
         return text
 
     def _clean_filename(self, filename: str) -> str:
@@ -254,9 +292,9 @@ class FileRenamer:
         except UnicodeEncodeError as e:
             raise ValueError(f"Input filename contains invalid characters: {e}")
 
-        print(f"\n{'='*50}")
-        print(f"Starting to process: {filename!r}")
-        print(f"{'='*50}\n")
+        self.debug_print(f"\n{'='*50}")
+        self.debug_print(f"Starting to process: {filename!r}")
+        self.debug_print(f"{'='*50}\n")
 
         # Split into name and extension with rules:
         # 1. Extensions cannot contain spaces
@@ -290,27 +328,27 @@ class FileRenamer:
         preserve_name_case = extension.lower() in self.PRESERVE_CASE_EXTENSIONS
 
         # First normalize all whitespace to single spaces
-        print(f"Splitting name: {name!r} (extension: {extension!r})")
-        print(f"Before whitespace normalization: {name!r}")
+        self.debug_print(f"Splitting name: {name!r} (extension: {extension!r})")
+        self.debug_print(f"Before whitespace normalization: {name!r}")
         name = re.sub(r'[\n\r\t\f\v]+', ' ', name)  # Convert newlines and other whitespace to spaces
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
-        print(f"After whitespace normalization:  {name!r}\n")
+        self.debug_print(f"After whitespace normalization:  {name!r}\n")
 
         # Replace special characters
-        print(f"Before special char replacement: {name!r}")
+        self.debug_print(f"Before special char replacement: {name!r}")
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
             if original_char == '...':
                 # Handle ellipsis separately to avoid over-replacement
-                print(f"Before ellipsis replacement:    {name!r}")
+                self.debug_print(f"Before ellipsis replacement:    {name!r}")
                 name = re.sub(r'\.{3,}', replacement_char, name)
-                print(f"After ellipsis replacement:     {name!r}")
+                self.debug_print(f"After ellipsis replacement:     {name!r}")
             else:
                 # Replace multiple occurrences with single replacement
                 name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
-        print(f"After special char replacement:  {name!r}\n")
+        self.debug_print(f"After special char replacement:  {name!r}\n")
 
         name = name.strip()  # Remove leading/trailing spaces
-        print(f"After strip:                    {name!r}\n")
+        self.debug_print(f"After strip:                    {name!r}\n")
 
         # Remove trailing periods and ellipsis
         # These are never allowed at the end, regardless of what comes before
@@ -319,21 +357,21 @@ class FileRenamer:
         # If we have no extension but the cleaned name ends in a recognized extension,
         # move it to be the actual extension (may have affected base name capitalization)
         if not extension and '.' in name:
-            print(f"\nChecking for recognized extension in cleaned name: {name!r}")
+            self.debug_print(f"\nChecking for recognized extension in cleaned name: {name!r}")
             # Get the potential extension and clean it of special characters
             potential_ext = name.split('.')[-1]
             # Remove any special replacement characters that aren't valid in extensions
             for orig, repl in self.CHAR_REPLACEMENTS.items():
                 potential_ext = potential_ext.replace(repl, '')
             potential_ext = potential_ext.lower()
-            print(f"Potential extension found (after cleanup): {potential_ext!r}")
+            self.debug_print(f"Potential extension found (after cleanup): {potential_ext!r}")
             if potential_ext in self.KNOWN_EXTENSIONS:
                 name = name[:-(len(potential_ext) + 1)]  # remove .ext
                 name = self._clean_trailing_chars(name, debug_prefix="\n")  # clean trailing chars from new base name
                 extension = potential_ext
-                print(f"Recognized extension moved: name={name!r}, extension={extension!r}")
+                self.debug_print(f"Recognized extension moved: name={name!r}, extension={extension!r}")
             else:
-                print(f"Extension {potential_ext!r} not in recognized list")
+                self.debug_print(f"Extension {potential_ext!r} not in recognized list")
 
         # For normal files, apply title case to the name
         # For files with known extensions, preserve the original name case
@@ -341,9 +379,9 @@ class FileRenamer:
         if not extension.lower() in self.PRESERVE_CASE_EXTENSIONS:
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.word_boundary_chars) + '])'
-            print(f"\nSplit pattern: {split_pattern}")
+            self.debug_print(f"\nSplit pattern: {split_pattern}")
             parts = re.split(split_pattern, name)
-            print(f"Parts after split: {parts!r}\n")
+            self.debug_print(f"Parts after split: {parts!r}\n")
 
             titled_parts = []
             prev_part = ''
@@ -359,7 +397,7 @@ class FileRenamer:
 
                 # Keep separators as is
                 if len(part) == 1 and part in self.word_boundary_chars:
-                    print(f"Keeping separator: {part!r}")
+                    self.debug_print(f"Keeping separator: {part!r}")
                     titled_parts.append(part)
                     prev_part = part
                     continue
@@ -374,12 +412,12 @@ class FileRenamer:
                 # 3. It's not after a period or ellipsis
                 # 4. It's not the last word
                 # 5. It's between spaces (not after special chars)
-                print(f"\nWord: {word!r}")
-                print(f"In LOWERCASE_WORDS: {word in self.LOWERCASE_WORDS}")
-                print(f"Not first word: {bool(titled_parts)}")
-                print(f"After space: {prev_part == ' '}")
-                print(f"Not last word: {word != last_real_word}")
-                print(f"Previous parts: {titled_parts[-2:] if len(titled_parts) >= 2 else []}")
+                self.debug_print(f"\nWord: {word!r}")
+                self.debug_print(f"In LOWERCASE_WORDS: {word in self.LOWERCASE_WORDS}")
+                self.debug_print(f"Not first word: {bool(titled_parts)}")
+                self.debug_print(f"After space: {prev_part == ' '}")
+                self.debug_print(f"Not last word: {word != last_real_word}")
+                self.debug_print(f"Previous parts: {titled_parts[-2:] if len(titled_parts) >= 2 else []}")
 
                 # Check if we're between spaces
                 is_between_spaces = (
@@ -397,17 +435,17 @@ class FileRenamer:
                     prev_part in self.OPENING_BRACKETS or  # After any opening bracket
                     word == last_real_word  # Last word
                 )
-                print(f"Should capitalize:    {should_capitalize}\n")
+                self.debug_print(f"Should capitalize:    {should_capitalize}\n")
 
                 if (word in self.LOWERCASE_WORDS and
                     titled_parts and      # Not first word
                     not should_capitalize and  # Not after period/ellipsis
                     word != last_real_word and  # Not the last word
                     is_between_spaces):   # Between spaces, not after special char
-                    print(f"Should be lowercase: True")
+                    self.debug_print(f"Should be lowercase: True")
                     titled_parts.append(word)
                 else:
-                    print(f"Should be lowercase: False")
+                    self.debug_print(f"Should be lowercase: False")
                     titled_parts.append(word.capitalize())
                 prev_part = part
 
@@ -430,10 +468,10 @@ class FileRenamer:
         else:
             result = name
 
-        print(f"\n{'='*50}")
-        print(f"Finished processing: {filename!r}")
-        print(f"Result: {result!r}")
-        print(f"{'='*50}\n")
+        self.debug_print(f"\n{'='*50}")
+        self.debug_print(f"Finished processing: {filename!r}")
+        self.debug_print(f"Result: {result!r}")
+        self.debug_print(f"{'='*50}\n")
 
         return result
 
@@ -457,7 +495,7 @@ class FileRenamer:
 
                 # Check if target already exists
                 if (self.directory / new_name).exists():
-                    print(f"Warning: Cannot rename '{original_name}' to '{new_name}' - target exists")
+                    self.debug_print(f"Warning: Cannot rename '{original_name}' to '{new_name}' - target exists")
                     continue
 
                 changes.append((original_name, new_name))
@@ -479,6 +517,8 @@ def main():
                       help='Directory containing files to rename')
     parser.add_argument('--dry-run', action='store_true',
                       help='Show what would be renamed without making changes')
+    parser.add_argument('--debug', action='store_true',
+                      help='Enable debug output')
 
     # Add a custom -? help option
     parser.add_argument('-?', action='help',
@@ -486,7 +526,10 @@ def main():
 
     args = parser.parse_args()
 
-    renamer = FileRenamer(args.directory)
+    # Update debug mode based on command line flag
+    FileRenamer._debug = FileRenamer._debug or args.debug
+
+    renamer = FileRenamer(args.directory, dry_run=args.dry_run)
     changes = renamer.process_files()
 
     if args.dry_run:
@@ -494,11 +537,21 @@ def main():
     else:
         print("\nExecuted changes:")
 
+    # Track if any files were changed
+    any_changes = False
     for old, new in changes:
-        print(f"'{old}'\n  -> '{new}'\n")
+        if old == new:
+            print(f"'{old}'\n  ->  unchanged\n")
+        else:
+            any_changes = True
+            print(f"'{old}'\n  -> '{new}'\n")
+
+    if not any_changes:
+        print("\nNo files need to be renamed.")
+        return
 
     if not args.dry_run:
-        confirm = input("Apply these changes? [y/N] ")
+        confirm = input("\nApply these changes? [y/N] ")
         if confirm.lower() != 'y':
             print("No changes made.")
             return

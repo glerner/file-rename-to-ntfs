@@ -206,11 +206,11 @@ class TestFileRenamer(unittest.TestCase):
         test_cases = [
             (
                 'Law of Attraction Secrets: How to Manifest Anything You Want Faster Than Ever!.mp4',
-                f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster Than Ever!.mp4'
+                f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster than Ever!.mp4'
             ),
             (
                 'Make So Much Money You Question It! - Get Ahead of 99% of People & Win at Anything | Alex Hormozi.mp4',
-                f'Make So Much Money You Question It! - Get Ahead of 99% of People and Win at Anything {pipe} Alex Hormozi.mp4'
+                f'Make so Much Money You Question It! - Get Ahead of 99% of People and Win at Anything {pipe} Alex Hormozi.mp4'
             ),
         ]
 
