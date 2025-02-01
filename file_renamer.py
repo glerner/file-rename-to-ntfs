@@ -46,8 +46,14 @@ class FileRenamer:
         '*': '✱',   # Heavy Asterisk
         '?': '⁇',   # Reversed Question Mark
         '"': '＂',  # Full Width Quotation Mark
-        '<': '❬',   # Medium Left-Pointing Angle Bracket Ornament
-        '>': '❭',   # Medium Right-Pointing Angle Bracket Ornament
+        '<': '❬',   # Left Black Lenticular Bracket
+        '>': '❭',   # Right Black Lenticular Bracket
+        '<<': '《',  # Left Double Angle Bracket
+        '>>': '》',  # Right Double Angle Bracket
+        '[[': '⟦',  # Mathematical Left White Square Bracket
+        ']]': '⟧',  # Mathematical Right White Square Bracket
+        '{{': '⦃',  # Left White Curly Bracket
+        '}}': '⦄',  # Right White Curly Bracket
         '|': '│',   # Box Drawings Light Vertical
         '&': 'and', # Replace ampersand with 'and'
         '$': '＄',  # Full Width Dollar Sign
@@ -55,14 +61,34 @@ class FileRenamer:
         '...': '…',  # Replace three or more periods with ellipsis character
     }
 
+    # All opening bracket characters (ASCII and replacements)
+    OPENING_BRACKETS = {
+        # ASCII opening brackets
+        '(', '[', '{', '<',
+        # Replacement opening brackets
+        '❬',  # Left Black Lenticular Bracket
+        '《',  # Left Double Angle Bracket
+        '⟦',  # Mathematical Left White Square Bracket
+        '⦃',  # Left White Curly Bracket
+    }
+
+    # All closing bracket characters (ASCII and replacements)
+    CLOSING_BRACKETS = {
+        # ASCII closing brackets
+        ')', ']', '}', '>',
+        # Replacement closing brackets
+        '❭',  # Right Black Lenticular Bracket
+        '》',  # Right Double Angle Bracket
+        '⟧',  # Mathematical Right White Square Bracket
+        '⦄',  # Right White Curly Bracket
+    }
+
     # Characters that are allowed at the end of a filename
-    ALLOWED_TRAILING_CHARS = {
-        ')', ']', '}',  # Closing brackets
-        '!',            # Exclamation mark (already decided to keep)
-        '＄',           # Full Width Dollar Sign (from CHAR_REPLACEMENTS)
-        '＂',           # Full Width Quotation Mark (from CHAR_REPLACEMENTS)
-        '❭',           # Right Black Lenticular Bracket (closing)
-        '⁇',           # Double Question Mark (like exclamation)
+    ALLOWED_TRAILING_CHARS = CLOSING_BRACKETS | {
+        '!',            # Exclamation mark
+        '＄',           # Full Width Dollar Sign
+        '＂',           # Full Width Quotation Mark
+        '⁇',           # Double Question Mark
     }
 
     # Only include special characters that should act as word boundaries
@@ -70,7 +96,11 @@ class FileRenamer:
         '⧵', 'ː', '✱', '⁇', '│', '＂',  # Special character replacements
         '.', ' ', '-',                    # Standard word boundaries
         '❬', '❭',                        # Angle brackets
-        '…'                              # Ellipsis
+        '…',                             # Ellipsis
+        '(', '[', '{', '<',              # ASCII opening brackets
+        ')', ']', '}', '>',              # ASCII closing brackets
+        '❬', '《', '⟦', '⦃',             # Replacement opening brackets
+        '❭', '》', '⟧', '⦄',             # Replacement closing brackets
     }
 
     # File extensions where we want to preserve the original case of the base name
@@ -124,10 +154,10 @@ class FileRenamer:
                     f"Invalid type in CHAR_REPLACEMENTS: {original_char} -> {replacement_char}. "
                     "Both key and value must be strings."
                 )
-            if len(original_char) != 1 and original_char != '...':
+            if len(original_char) != 1 and original_char != '...' and original_char not in {'<<', '>>', '[[', ']]', '{{', '}}'}:
                 raise ValueError(
                     f"Invalid original character in CHAR_REPLACEMENTS: {original_char}. "
-                    "Original character must be a single character or '...'."
+                    "Original character must be a single character, '...', or a valid bracket sequence."
                 )
             if not replacement_char:
                 raise ValueError(
@@ -185,20 +215,33 @@ class FileRenamer:
             print(f"{debug_prefix}Before trailing cleanup:        {text!r}")
 
         while text:
+            changed = False
+
+            # First handle periods and ellipsis which have special "truly trailing" rules
             if text.endswith('.') or text.endswith('…'):
                 # Check if there's more text after the trailing dots/ellipsis
                 rest = text.rstrip('.…').strip()
                 if not rest:  # If empty, this was truly trailing
                     text = rest
-                    break
+                    changed = True
                 # If what's left ends in an allowed char or doesn't end in period/ellipsis, we're done
-                if not (rest.endswith('.') or rest.endswith('…')):
+                elif not (rest.endswith('.') or rest.endswith('…')):
                     text = rest
-                    break
+                    changed = True
                 # Otherwise keep going (more trailing periods/ellipsis to remove)
-                text = rest
-            else:
-                break  # No trailing periods or ellipsis
+                else:
+                    text = rest
+                    changed = True
+
+            # Then check for any other special characters that aren't allowed at the end
+            for orig, repl in self.CHAR_REPLACEMENTS.items():
+                if text.endswith(repl) and repl not in self.ALLOWED_TRAILING_CHARS:
+                    text = text[:-len(repl)].rstrip()
+                    changed = True
+                    break
+
+            if not changed:
+                break  # No more trailing characters to remove
 
         if debug_prefix:
             print(f"{debug_prefix}After trailing cleanup:         {text!r}\n")
@@ -350,7 +393,8 @@ class FileRenamer:
                 # Always capitalize after a period/ellipsis or if it's the first/last word
                 should_capitalize = (
                     not titled_parts or  # First word
-                    prev_part in {'.', '…'} or  # After period or ellipsis
+                    prev_part in {'.', self.CHAR_REPLACEMENTS['...']} or  # After period or ellipsis
+                    prev_part in self.OPENING_BRACKETS or  # After any opening bracket
                     word == last_real_word  # Last word
                 )
                 print(f"Should capitalize:    {should_capitalize}\n")

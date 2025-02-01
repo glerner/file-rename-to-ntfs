@@ -254,7 +254,7 @@ class TestFileRenamer(unittest.TestCase):
             ('test!', 'Test!'),  # Keep exclamation mark at end
             ('Clark Gable in "Gone with the Wind".png', f'Clark Gable in {quote}Gone with the Wind{quote}.png'),  # Keep quotes even at the end
             ('script.py', 'script.py'),  # Don't change casing of known file extensions
-            ('data.json}...', 'Data.json'),  # Remove closing brace, remove trailing periods
+            ('data.json}...', 'Data.Json}'),  # Keep closing brace, since are allowing closing parenthesis-like characters, remove trailing periods
             ('data.json', 'data.json'),  # Don't change casing of known file extensions
             ('Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4',
              'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),  # Keep capitalization after parentheses
