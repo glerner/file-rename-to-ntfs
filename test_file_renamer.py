@@ -206,6 +206,7 @@ class TestFileRenamer(unittest.TestCase):
         - 'Title: Subtitle' -> 'Titleː Subtitle'  # original spacing preserved (colon replaced with look-alike)
         - 'Path\to\file' -> 'Path⧵to⧵file'  # no spaces added (backslashes replaced with look-alike)
         Ampersands are replaced with 'and'.
+        Apostrophes are preserved in contractions and possessives.
         """
         # Store special characters to avoid f-string syntax issues
         R = FileRenamer.CHAR_REPLACEMENTS
@@ -220,6 +221,23 @@ class TestFileRenamer(unittest.TestCase):
             (
                 'Make So Much Money You Question It! - Get Ahead of 99% of People & Win at Anything | Alex Hormozi.mp4',
                 f'Make so Much Money You Question It! - Get Ahead of 99% of People and Win at Anything {pipe} Alex Hormozi.mp4'
+            ),
+            # Test apostrophe handling
+            (
+                "From 'This old ghost' Don's 'stupid'  move.mp4",
+                "From 'This Old Ghost' Don's 'Stupid' Move.mp4"
+            ),
+            (
+                "attorney vows to be 'first to sue', didn't check.mp4",
+                "Attorney Vows to be 'First to Sue', Didn't Check.mp4"
+            ),
+            (
+                "It's a Wonderful Life - Don't Give Up.mp4",
+                "It's a Wonderful Life - Don't Give Up.mp4"
+            ),
+            (
+                "The Cat's Meow and the Dog's Bark.mp4",
+                "The Cat's Meow and the Dog's Bark.mp4"
             ),
         ]
 
@@ -319,13 +337,13 @@ class TestFileRenamer(unittest.TestCase):
             FileRenamer.CHAR_REPLACEMENTS = {42: 'star'}  # number instead of string
             FileRenamer.validate_replacements()
         self.assertIn("Invalid type in CHAR_REPLACEMENTS", str(cm.exception))
-        
+
         # Test invalid original character
         with self.assertRaises(ValueError) as cm:
             FileRenamer.CHAR_REPLACEMENTS = {'abc': 'x'}  # multi-char that's not allowed
             FileRenamer.validate_replacements()
         self.assertIn("Invalid original character", str(cm.exception))
-        
+
         # Test empty replacement
         with self.assertRaises(ValueError) as cm:
             FileRenamer.CHAR_REPLACEMENTS = {'x': ''}
@@ -335,7 +353,7 @@ class TestFileRenamer(unittest.TestCase):
     def test_clean_filename_errors(self):
         """Test error handling in _clean_filename"""
         renamer = FileRenamer(str(self.temp_dir))
-        
+
         # Test invalid Unicode
         with self.assertRaises(ValueError) as cm:
             # Create a string with an invalid UTF-16 surrogate
@@ -347,22 +365,22 @@ class TestFileRenamer(unittest.TestCase):
         """Test actual file operations"""
         # Create test files
         (self.temp_dir / "Test File?.txt").write_text("test")
-        
+
         # Test non-dry-run mode
         renamer = FileRenamer(str(self.temp_dir), dry_run=False)
         changes = renamer.process_files()
         self.assertEqual(len(changes), 1)
         self.assertEqual(changes[0][0], "Test File?.txt")
         self.assertEqual(changes[0][1], "Test File⁇.txt")
-        
+
         # Verify file was actually renamed
         self.assertFalse((self.temp_dir / "Test File?.txt").exists())
         self.assertTrue((self.temp_dir / "Test File⁇.txt").exists())
-        
+
         # Test handling of existing target
         (self.temp_dir / "Another Test?.txt").write_text("test1")
         (self.temp_dir / "Another Test⁇.txt").write_text("test2")
-        
+
         changes = renamer.process_files()
         self.assertEqual(len(changes), 0)  # No changes due to existing target
         self.assertTrue((self.temp_dir / "Another Test?.txt").exists())  # Original file still exists
@@ -373,7 +391,7 @@ class TestFileRenamer(unittest.TestCase):
         import sys
         from io import StringIO
         import contextlib
-        
+
         # Helper to capture stdout and stderr
         @contextlib.contextmanager
         def capture_output():
@@ -384,10 +402,10 @@ class TestFileRenamer(unittest.TestCase):
                 yield sys.stdout, sys.stderr
             finally:
                 sys.stdout, sys.stderr = old_out, old_err
-        
+
         # Save original argv
         orig_argv = sys.argv
-        
+
         try:
             # Test help output
             with capture_output() as (out, err):
@@ -395,11 +413,11 @@ class TestFileRenamer(unittest.TestCase):
                     sys.argv = ['file_renamer.py', '--help']
                     main()
             self.assertIn("Directory containing files to rename", out.getvalue())
-            
+
             # Test dry run (no input needed)
             test_file = self.temp_dir / "Test File?.txt"
             test_file.write_text("test")
-            
+
             with capture_output() as (out, err):
                 sys.argv = ['file_renamer.py', str(self.temp_dir), '--dry-run']
                 main()
@@ -408,13 +426,13 @@ class TestFileRenamer(unittest.TestCase):
             self.assertIn("Test File?.txt", output)
             self.assertIn("Test File⁇.txt", output)
             self.assertTrue(test_file.exists())  # File not renamed in dry run
-            
+
             # Test debug mode with mocked input for 'y'
             # First ensure target doesn't exist
             target_file = self.temp_dir / "Test File⁇.txt"
             if target_file.exists():
                 target_file.unlink()
-                
+
             with capture_output() as (out, err), \
                  patch('builtins.input', return_value='y'):  # Mock user input to 'y'
                 sys.argv = ['file_renamer.py', str(self.temp_dir), '--debug']
@@ -425,14 +443,14 @@ class TestFileRenamer(unittest.TestCase):
             self.assertIn("Test File⁇.txt", output)
             self.assertFalse(test_file.exists())  # Original file should be gone
             self.assertTrue(target_file.exists())  # New file should exist
-            
+
             # Test debug mode with 'n' response
             # Clean up and recreate test files
             if target_file.exists():
                 target_file.unlink()
             test_file = self.temp_dir / "Test File?.txt"
             test_file.write_text("test")
-            
+
             with capture_output() as (out, err), \
                  patch('builtins.input', return_value='n'):  # Mock user input to 'n'
                 sys.argv = ['file_renamer.py', str(self.temp_dir), '--debug']
@@ -444,17 +462,60 @@ class TestFileRenamer(unittest.TestCase):
             # Note: The file is already renamed during processing, but changes aren't committed
             self.assertFalse(test_file.exists())  # Original file is gone during processing
             self.assertTrue(target_file.exists())  # Target file exists during processing
-            
+
             # Test no changes needed
             with capture_output() as (out, err):
                 sys.argv = ['file_renamer.py', str(self.temp_dir), '--debug']
                 main()
             output = out.getvalue()
             self.assertIn("No files need to be renamed", output)
-            
+
         finally:
             # Restore original argv
             sys.argv = orig_argv
+
+    def test_contractions_and_apostrophes(self):
+        """Test handling of contractions and apostrophes.
+
+        Test cases include:
+        1. Common contractions (don't, it's, we're)
+        2. Possessives (John's)
+        3. Special cases (rock'n'roll, 'til, 'cause)
+        4. Mixed case with quotes and apostrophes
+        """
+        test_cases = [
+            # Basic contractions
+            ("don't give up.txt", "Don't Give Up.txt"),
+            ("it's a wonderful day.txt", "It's a Wonderful Day.txt"),
+            ("we're going home.txt", "We're Going Home.txt"),
+            ("they'll be back.txt", "They'll be Back.txt"),
+            ("i've got it.txt", "I've Got It.txt"),
+            ("you'd better run.txt", "You'd Better Run.txt"),
+            ("i'm feeling good.txt", "I'm Feeling Good.txt"),
+
+            # Possessives
+            ("john's book.txt", "John's Book.txt"),
+            ("the cat's meow.txt", "The Cat's Meow.txt"),
+            ("james' house.txt", "James' House.txt"),
+
+            # Special cases
+            ("rock'n'roll forever.txt", "Rock'n'Roll Forever.txt"),
+            ("'til death.txt", "'Til Death.txt"),
+            ("'cause i said so.txt", "'Cause I Said So.txt"),
+            ("catch 'em all.txt", "Catch 'Em All.txt"),
+
+            # Mixed cases with quotes
+            ("from 'this old ghost' don't move.mp4", "From 'This Old Ghost' Don't Move.mp4"),
+            ("it's a 'wonderful' life we're living.txt", "It's a 'Wonderful' Life We're Living.txt"),
+            ("john's 'great' adventure.txt", "John's 'Great' Adventure.txt"),
+        ]
+
+        for original, expected in test_cases:
+            result = self.renamer._clean_filename(original)
+            self.assertEqual(result, expected,
+                           f"\nInput:    {original!r}\n"
+                           f"Expected: {expected!r}\n"
+                           f"Got:      {result!r}")
 
 if __name__ == '__main__':
     unittest.main()

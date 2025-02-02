@@ -106,9 +106,9 @@ class FileRenamer:
     }
 
     # Only include special characters that should act as word boundaries
-    word_boundary_chars = {
+    WORD_BOUNDARY_CHARS = {
         '⧵', 'ː', '✱', '⁇', '│', '＂',  # Special character replacements
-        '.', ' ', '-',                    # Standard word boundaries
+        '.', ' ', '-', "'",              # Standard word boundaries
         '❬', '❭',                        # Angle brackets
         '…',                             # Ellipsis
         '(', '[', '{', '<',              # ASCII opening brackets
@@ -156,6 +156,24 @@ class FileRenamer:
         'ttf', 'otf', 'woff', 'woff2',
     }
 
+    # Common contractions and possessives to preserve
+    CONTRACTIONS = {
+        # Contractions (without apostrophe)
+        'll',  # will, shall
+        's',   # is, has, possessive
+        't',   # not (don't, won't, etc)
+        're',  # are
+        've',  # have
+        'd',   # had, would
+        'm',   # am
+
+        # Special quoted terms (without apostrophe)
+        'em',  # them (informal)
+        'til', # until (informal)
+        'n',   # and (rock'n'roll)
+        'cause', # because
+    }
+
     # Debug mode flag
     _debug = is_debug_mode()
 
@@ -201,21 +219,21 @@ class FileRenamer:
     LOWERCASE_WORDS = {
         # Articles
         'a', 'an', 'the',
-        
+
         # Coordinating Conjunctions
         'and', 'but', 'for', 'nor', 'or', 'so', 'yet',
-        
+
         # Short Prepositions (under 5 letters)
-        'at', 'by', 'down', 'for', 'from', 'in', 'into', 
+        'at', 'by', 'down', 'for', 'from', 'in', 'into',
         'like', 'near', 'of', 'off', 'on', 'onto', 'out',
         'over', 'past', 'to', 'up', 'upon', 'with',
-        
+
         # Common Particles
         'as', 'if', 'how', 'than', 'vs', 'vs.',
-        
+
         # Common Words in Media Titles
         'part', 'vol', 'vs', 'feat', 'ft', 'remix',
-        
+
         # Be Verbs (when not first/last)
         'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
     }
@@ -378,7 +396,7 @@ class FileRenamer:
         # Extensions are always lowercased
         if not extension.lower() in self.PRESERVE_CASE_EXTENSIONS:
             # Build pattern that matches our word boundaries
-            split_pattern = '([' + ''.join(re.escape(c) for c in self.word_boundary_chars) + '])'
+            split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
             self.debug_print(f"\nSplit pattern: {split_pattern}")
             parts = re.split(split_pattern, name)
             self.debug_print(f"Parts after split: {parts!r}\n")
@@ -387,7 +405,7 @@ class FileRenamer:
             prev_part = ''
             last_real_word = None
             for part in parts:
-                if part and len(part) > 1 and not any(c in self.word_boundary_chars for c in part):
+                if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
                     last_real_word = part.lower()
 
             # Now process each part
@@ -395,15 +413,37 @@ class FileRenamer:
                 if not part:  # Skip empty parts
                     continue
 
+                # Convert to title case, handling special cases
+                word = part.lower()  # First convert to lowercase
+
+                self.debug_print(f"\nProcessing word: {word!r}")
+                self.debug_print(f"Previous part: {prev_part!r}")
+                self.debug_print(f"Is contraction: {word in self.CONTRACTIONS}")
+                self.debug_print(f"Titled parts so far: {titled_parts}")
+
+                # Skip empty parts
+                if not word:
+                    continue
+
                 # Keep separators as is
-                if len(part) == 1 and part in self.word_boundary_chars:
+                if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
                     self.debug_print(f"Keeping separator: {part!r}")
                     titled_parts.append(part)
                     prev_part = part
                     continue
 
-                # Convert to title case, handling special cases
-                word = part.lower()  # First convert to lowercase
+                # Check if this is a contraction
+                if word in self.CONTRACTIONS and len(titled_parts) >= 2:
+                    self.debug_print(f"\nFound contraction: {word!r}")
+                    self.debug_print(f"Previous part: {prev_part!r}")
+                    self.debug_print(f"Previous parts: {titled_parts[-2:]!r}")
+                    # Check if it follows a word + apostrophe (not space + apostrophe)
+                    if prev_part == "'" and not titled_parts[-2].isspace():
+                        self.debug_print(f"Keeping as contraction\n")
+                        titled_parts.append(word)
+                        prev_part = part
+                        continue
+                    self.debug_print(f"Not treating as contraction - not after word + apostrophe\n")
 
                 # Check if this word should stay lowercase
                 # Word should be lowercase if:
@@ -417,7 +457,7 @@ class FileRenamer:
                 self.debug_print(f"Not first word: {bool(titled_parts)}")
                 self.debug_print(f"After space: {prev_part == ' '}")
                 self.debug_print(f"Not last word: {word != last_real_word}")
-                self.debug_print(f"Previous parts: {titled_parts[-2:] if len(titled_parts) >= 2 else []}")
+                self.debug_print(f"Previous parts: {titled_parts[-2:] if len(titled_parts) >= 2 else []!r}")
 
                 # Check if we're between spaces
                 is_between_spaces = (
@@ -425,7 +465,7 @@ class FileRenamer:
                     (len(titled_parts) < 2 or  # Start of string
                      (titled_parts[-1] == ' ' and  # Previous was space
                       (len(titled_parts) < 3 or   # Beginning of string
-                       titled_parts[-2] not in self.word_boundary_chars - {' '})))  # Not after special char
+                       titled_parts[-2] not in self.WORD_BOUNDARY_CHARS - {' '})))  # Not after special char
                 )
 
                 # Always capitalize after a period/ellipsis or if it's the first/last word
@@ -541,10 +581,10 @@ def main():
     any_changes = False
     for old, new in changes:
         if old == new:
-            print(f"'{old}'\n  ->  unchanged\n")
+            print(f"{old}\n  ->  unchanged\n")
         else:
             any_changes = True
-            print(f"'{old}'\n  -> '{new}'\n")
+            print(f"{old}\n  -> {new}\n")
 
     if not any_changes:
         print("\nNo files need to be renamed.")
