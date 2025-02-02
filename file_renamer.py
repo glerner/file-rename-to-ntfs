@@ -174,6 +174,110 @@ class FileRenamer:
         'cause', # because
     }
 
+    # Common abbreviations to preserve in uppercase
+    ABBREVIATIONS = {
+        # Academic Degrees
+        'BA', 'BS', 'BSC', 'MA', 'MBA', 'MD', 'M.D', 'PhD', 'Ph.D', 'JD', 'MS',
+
+        # Movie/TV Ratings
+        'TV','G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
+
+        # TV Networks
+        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS',
+        'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC',
+
+        # US States (excluding those that conflict with common words)
+        'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL',
+        'GA', 'HI', 'ID', 'IL', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI',
+        'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV',
+        'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
+        'VA', 'VT', 'WA', 'WI', 'WV', 'WY',
+
+        # Canadian Provinces (excluding ON, a lowercase word)
+        'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'QC', 'SK', 'YT',
+
+        # Countries and Regions
+        'UK', 'USA', 'US', 'EU', 'UAE', 'USSR',
+
+        # Time/Date (AM and PM handled special case)
+        'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT', 'UTC',
+
+        # Government/Organizations
+        'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOE', 'DOJ', 'FBI', 'FCC',
+        'FDA', 'FEMA', 'FTC', 'IRS', 'NASA', 'NOAA', 'NSA', 'TSA', 'USDA',
+        'EPA', 'ICE', 'SEC', 'SSA', 'UN', 'USPS',
+
+        # Mexican States (official abbreviations)
+        'AGS',  # Aguascalientes
+        'BC',   # Baja California
+        'BCS',  # Baja California Sur
+        'CAMP', # Campeche
+        'CHIS', # Chiapas
+        'CHIH', # Chihuahua
+        'COAH', # Coahuila
+        'COL',  # Colima
+        'CDMX', # Ciudad de México
+        'DGO',  # Durango
+        'GTO',  # Guanajuato
+        'GRO',  # Guerrero
+        'HGO',  # Hidalgo
+        'JAL',  # Jalisco
+        'MEX',  # Estado de México
+        'MICH', # Michoacán
+        'MOR',  # Morelos
+        'NAY',  # Nayarit
+        'NL',   # Nuevo León
+        'OAX',  # Oaxaca
+        'PUE',  # Puebla
+        'QRO',  # Querétaro
+        'QROO', # Quintana Roo
+        'SLP',  # San Luis Potosí
+        'SIN',  # Sinaloa
+        'SON',  # Sonora
+        'TAB',  # Tabasco
+        'TAMPS',# Tamaulipas
+        'TLAX', # Tlaxcala
+        'VER',  # Veracruz
+        'YUC',  # Yucatán
+        'ZAC',  # Zacatecas
+
+        # Operating Systems and File Systems
+        'DOS', 'OS/X', 'NTFS', 'FAT32', 'exFAT',
+
+        # Technology Standards and Formats
+        'CD', 'DVD', 'GB', 'HD', 'HDMI', 'VGA', 'HTML', 'HTTP', 'HTTPS',
+        'IP', 'ISO', 'KB', 'MB', 'MP3', 'MP4', 'PDF', 'RAM', 'ROM',
+        'SQL', 'TB', 'USB', 'VHS', 'XML', 'JSON', 'PHP', 'Wi-Fi',
+        'CPU', 'GPU', 'SSD', 'HDD', 'NVMe', 'SATA', 'RAID', 'LAN', 'WAN',
+        'DNS', 'FTP', 'SSH', 'SSL', 'TLS', 'URL', 'URI', 'API', 'SDK',
+        'IDE', 'GUI', 'CLI', 'CSS', 'RSS', 'UPC', 'QR', 'AI', 'ML',
+
+        # Media Formats
+        # Images
+        'JPEG', 'JPG', 'PNG', 'GIF', 'BMP', 'TIF', 'TIFF', 'SVG', 'WebP',
+        # Video
+        'AVI', 'MP4', 'MKV', 'MOV', 'WMV', 'FLV', 'WebM', 'M4V', 'VOB',
+        # Audio
+        'MP3', 'WAV', 'AAC', 'OGG', 'FLAC', 'WMA', 'M4A',
+        # Quality/Standards
+        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD', 'fps', 'kHz', 'MHz', 'GHz',
+
+        # Medical/Scientific
+        'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
+        'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER',
+
+        # Business/Organizations
+        'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'HR', 'LLC', 'LLP',
+        'VP', 'vs',  # Note: removed VS to avoid confusion
+
+        # Other Common
+        'ID', 'OK', 'PC', 'PIN', 'PO', 'PS', 'RIP', 'UFO', 'VIP', 'ZIP',
+        'DIY', 'FAQ', 'ASAP', 'IMAX', 'STEM',
+
+        # Software/Platforms
+        'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL'
+    }
+
     # Debug mode flag
     _debug = is_debug_mode()
 
@@ -432,6 +536,15 @@ class FileRenamer:
                     prev_part = part
                     continue
 
+                # Special case: AM/PM after numbers (including when joined like "9am")
+                if re.match(r'\d+[ap]m', word, re.IGNORECASE):
+                    self.debug_print(f"Found time with AM/PM: {word!r}")
+                    num = re.search(r'\d+', word, re.IGNORECASE).group()
+                    ampm = word[len(num):].upper()
+                    titled_parts.append(f"{num}{ampm}")
+                    prev_part = part
+                    continue
+
                 # Check if this is a contraction
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
                     self.debug_print(f"\nFound contraction: {word!r}")
@@ -445,28 +558,29 @@ class FileRenamer:
                         continue
                     self.debug_print(f"Not treating as contraction - not after word + apostrophe\n")
 
-                # Check if this word should stay lowercase
+                # Check if it's an abbreviation first
+                found_abbr = False
+                word_upper = word.upper()
+                for abbr in self.ABBREVIATIONS:
+                    if word_upper == abbr.upper():
+                        self.debug_print(f"Found abbreviation: {word!r} -> {abbr}")
+                        titled_parts.append(abbr)
+                        prev_part = part
+                        found_abbr = True
+                        break
+
+                if found_abbr:
+                    continue
+
+                # Check if we're between spaces or after punctuation
                 # Word should be lowercase if:
-                # 1. It's in our LOWERCASE_WORDS set
-                # 2. It's not the first word
-                # 3. It's not after a period or ellipsis
+                # 1. It's in our lowercase word list AND
+                # 2. It's not the first word AND
+                # 3. It's not after a period/ellipsis AND
                 # 4. It's not the last word
                 # 5. It's between spaces (not after special chars)
-                self.debug_print(f"\nWord: {word!r}")
-                self.debug_print(f"In LOWERCASE_WORDS: {word in self.LOWERCASE_WORDS}")
-                self.debug_print(f"Not first word: {bool(titled_parts)}")
-                self.debug_print(f"After space: {prev_part == ' '}")
-                self.debug_print(f"Not last word: {word != last_real_word}")
-                self.debug_print(f"Previous parts: {titled_parts[-2:] if len(titled_parts) >= 2 else []!r}")
 
-                # Check if we're between spaces
-                is_between_spaces = (
-                    prev_part == ' ' and  # Current word follows a space
-                    (len(titled_parts) < 2 or  # Start of string
-                     (titled_parts[-1] == ' ' and  # Previous was space
-                      (len(titled_parts) < 3 or   # Beginning of string
-                       titled_parts[-2] not in self.WORD_BOUNDARY_CHARS - {' '})))  # Not after special char
-                )
+                is_between_spaces = prev_part == ' '
 
                 # Always capitalize after a period/ellipsis or if it's the first/last word
                 should_capitalize = (

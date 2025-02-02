@@ -281,7 +281,7 @@ class TestFileRenamer(unittest.TestCase):
             ('test!', 'Test!'),  # Keep exclamation mark at end
             ('Clark Gable in "Gone with the Wind".png', f'Clark Gable in {quote}Gone with the Wind{quote}.png'),  # Keep quotes even at the end
             ('script.py', 'script.py'),  # Don't change casing of known file extensions
-            ('data.json}...', 'Data.Json}'),  # Keep closing brace, since are allowing closing parenthesis-like characters, remove trailing periods
+            ('data.json}...', 'Data.JSON}'),  # Keep closing brace, since are allowing closing parenthesis-like characters, remove trailing periods
             ('data.json', 'data.json'),  # Don't change casing of known file extensions
             ('Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4',
              'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),  # Keep capitalization after parentheses
@@ -508,6 +508,73 @@ class TestFileRenamer(unittest.TestCase):
             ("from 'this old ghost' don't move.mp4", "From 'This Old Ghost' Don't Move.mp4"),
             ("it's a 'wonderful' life we're living.txt", "It's a 'Wonderful' Life We're Living.txt"),
             ("john's 'great' adventure.txt", "John's 'Great' Adventure.txt"),
+        ]
+
+        for original, expected in test_cases:
+            result = self.renamer._clean_filename(original)
+            self.assertEqual(result, expected,
+                           f"\nInput:    {original!r}\n"
+                           f"Expected: {expected!r}\n"
+                           f"Got:      {result!r}")
+
+    def test_abbreviations(self):
+        """Test handling of common abbreviations.
+
+        Test cases include:
+        1. Academic degrees
+        2. Movie/TV ratings
+        3. TV networks
+        4. US states and Canadian provinces
+        5. Time/date abbreviations
+        6. Government organizations
+        7. Technology terms
+        8. Mixed case with other words
+        """
+        test_cases = [
+            # Academic degrees
+            ("dr. smith md phd.txt", "Dr. Smith MD PhD.txt"),
+            ("jane doe, m.d..txt", "Jane Doe, M.D.txt"),
+
+            # Movie/TV ratings
+            ("movie pg-13 2024.mp4", "Movie PG-13 2024.mp4"),
+            ("tv show tv-ma s01.mkv", "TV Show TV-MA S01.mkv"),
+
+            # TV networks (but not the word 'fox')
+            ("hbo special on bbc news.mp4", "HBO Special on BBC News.mp4"),
+            ("cnn vs fox debate.mp4", "CNN vs Fox Debate.mp4"),
+
+            # States and provinces
+            ("ny to ca road trip.mp4", "NY to CA Road Trip.mp4"),
+            ("from bc to qc via ab.txt", "From BC to QC Via AB.txt"),
+
+            # Time/date
+            ("meeting 9am pst.txt", "Meeting 9AM PST.txt"),
+            ("3pm est update.doc", "3PM EST Update.doc"),
+
+            # Government/Organizations
+            ("fbi and cia report.pdf", "FBI and CIA Report.pdf"),
+            ("irs tax forms 2024.pdf", "IRS Tax Forms 2024.pdf"),
+            ("dod and doj meeting.txt", "DOD and DOJ Meeting.txt"),
+
+            # Mexican States
+            ("cdmx to bc road trip.mp4", "CDMX to BC Road Trip.mp4"),
+            ("jalisco (jal) and nayarit (nay).txt", "Jalisco (JAL) and Nayarit (NAY).txt"),
+
+            # Technology
+            ("100gb ssd vs 2tb hdd.txt", "100GB SSD vs 2TB HDD.txt"),
+            ("mp3 to mp4 converter.exe", "MP3 to MP4 Converter.exe"),
+            ("nvme vs sata ssd speed test.txt", "NVMe vs SATA SSD Speed Test.txt"),
+            ("how to setup raid and lan.pdf", "How to Setup RAID and LAN.pdf"),
+
+            # Video/Audio
+            ("movie 4k hdr 60fps.mkv", "Movie 4K HDR 60fps.mkv"),
+            ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.WAV"),
+            ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
+
+            # Mixed cases
+            ("dr. smith md in ny on bbc.mp4", "Dr. Smith MD in NY on BBC.mp4"),
+            ("6pm est fbi report on hbo.txt", "6PM EST FBI Report on HBO.txt"),
+            ("ca-based ceo's irs audit.pdf", "CA-Based CEO's IRS Audit.pdf"),
         ]
 
         for original, expected in test_cases:
