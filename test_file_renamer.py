@@ -632,6 +632,9 @@ class TestFileRenamer(unittest.TestCase):
             ("100w bulb.txt", "100W Bulb.txt"),
             ("5kwh usage.csv", "5kWh Usage.csv"),
             ("50mw power.pdf", "50mW Power.pdf"),
+            ("100va ups.txt", "100VA UPS.txt"),
+            ("5kva generator.pdf", "5kVA Generator.pdf"),
+            ("1mva transformer.doc", "1MVA Transformer.doc"),
 
             # Frequency
             ("100hz tone.wav", "100Hz Tone.wav"),
@@ -655,6 +658,7 @@ class TestFileRenamer(unittest.TestCase):
         3. Time (AM, PM)
         4. Mixed case variants
         """
+        R = FileRenamer.CHAR_REPLACEMENTS  # Shorthand for readability
         test_cases = [
             # Storage units - most common in filenames
             ("5kb file.txt", "5kB File.txt"),
@@ -685,10 +689,12 @@ class TestFileRenamer(unittest.TestCase):
             ("100km walk.gpx", "100km Walk.gpx"),
             ("5m pole.txt", "5m Pole.txt"),
             ("50KM trail.kml", "50km Trail.kml"),
-            ("80km/h limit.txt", "80km/h Limit.txt"),
-            ("100KM/h max.pdf", "100km/h Max.pdf"),
-            ("60km/hr speed.doc", "60km/hr Speed.doc"),
-            ("30KM/hr zone.txt", "30km/hr Zone.txt"),
+            ("80km/h limit.txt", f"80km{R['/']}h Limit.txt"),
+            ("100KM/h max.pdf", f"100km{R['/']}h Max.pdf"),
+            ("60km/hr speed.doc", f"60km{R['/']}hr Speed.doc"),
+            ("30KM/hr zone.txt", f"30km{R['/']}hr Zone.txt"),
+            ("10gb file.txt", "10GB File.txt"),
+            ("100ω resistor.txt", "100Ω Resistor.txt"),  # Greek letter unit
         ]
 
         for original, expected in test_cases:
@@ -736,11 +742,12 @@ class TestFileRenamer(unittest.TestCase):
 
     def test_lowercase_words_after_triggers(self):
         """Test that lowercase words are capitalized after trigger characters."""
-        ellipsis = self.renamer.CHAR_REPLACEMENTS['...']
-        tri_colon = self.renamer.CHAR_REPLACEMENTS[':']
-        left_angle = self.renamer.CHAR_REPLACEMENTS['<']
-        right_angle = self.renamer.CHAR_REPLACEMENTS['>']
-        question = self.renamer.CHAR_REPLACEMENTS['?']
+        R = FileRenamer.CHAR_REPLACEMENTS
+        ellipsis = R['...']
+        colon = R[':']
+        lt = R['<']  # left angle bracket
+        gt = R['>']  # right angle bracket
+        qmark = R['?']
         test_cases = [
             # After period
             ('hello.the world', 'Hello. The World'),
@@ -756,18 +763,60 @@ class TestFileRenamer(unittest.TestCase):
             ('hello [ the ] world', 'Hello [ The ] World'),
             ('hello {the} world', 'Hello {The} World'),
             ('hello { the } world', 'Hello { The } World'),
-            (f'hello <the> world', f'Hello {left_angle}The{right_angle} World'),
-            (f'hello < the > world', f'Hello {left_angle}The{right_angle} World'),
+            (f'hello <the> world', f'Hello {lt}The{gt} World'),
+            (f'hello < the > world', f'Hello {lt}The{gt} World'),
             # After exclamation and colon
             ('hello!the world', 'Hello! The World'),
             ('hello! the world', 'Hello! The World'),
-            (f'hello:the world', f'Hello{tri_colon} The World'),
-            (f'hello: the world', f'Hello{tri_colon} The World'),
+            (f'hello:the world', f'Hello{colon} The World'),
+            (f'hello: the world', f'Hello{colon} The World'),
         ]
         for original, expected in test_cases:
             with self.subTest(original=original):
                 result = self.renamer._clean_filename(original)
                 self.assertEqual(result, expected)
+
+    def test_numbers_with_words_and_dates(self):
+        """Test handling of numbers followed by words and date formats.
+
+        Tests:
+        1. Numbers followed by words (should capitalize word)
+        2. Numbers that could be confused with units
+        3. Various date formats
+        """
+        R = FileRenamer.CHAR_REPLACEMENTS
+        fslash = R['/']  # forward slash replacement
+
+        test_cases = [
+            # Numbers followed by words
+            ("10web hosting.txt", "10Web Hosting.txt"),
+            ("2smart solutions.pdf", "2Smart Solutions.pdf"),
+            ("5minutes ago.txt", "5Minutes Ago.txt"),
+            ("100years of history.doc", "100Years of History.doc"),
+
+            # Could be confused with units but are words
+            ("5market analysis.pdf", "5Market Analysis.pdf"),  # Not 5m
+            ("2large boxes.txt", "2Large Boxes.txt"),  # Not 2L
+            ("10great ideas.doc", "10Great Ideas.doc"),  # Not 10g
+
+            # Date formats (testing different styles and separators)
+            ("12jan2025 report.pdf", "12Jan2025 Report.pdf"),  # DMY no separator
+            ("12-jan-2025 report.pdf", "12-Jan-2025 Report.pdf"),  # DMY with hyphens
+            ("12.jan.2025 report.pdf", "12.Jan.2025 Report.pdf"),  # DMY with dots
+            # Note: Forward slashes in dates currently use the replacement character.
+            # TODO: Consider enhancing to detect valid dates and use dashes instead.
+            ("12/jan/2025 report.pdf", f"12{fslash}Jan{fslash}2025 Report.pdf"),  # DMY with slashes->replacement
+            ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),  # YMD no separator
+            ("jan12-2025 report.pdf", "Jan12-2025 Report.pdf"),  # MDY with partial hyphens
+            ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),  # DMY with 2-digit year
+        ]
+
+        for original, expected in test_cases:
+            result = self.renamer._clean_filename(original)
+            self.assertEqual(result, expected,
+                           f"\nInput:    {original!r}\n"
+                           f"Expected: {expected!r}\n"
+                           f"Got:      {result!r}")
 
 if __name__ == '__main__':
     unittest.main()

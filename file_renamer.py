@@ -53,9 +53,34 @@ class FileRenamer:
        - Always use lowercase for the extension
     """
 
+    # Multi-character replacements that are valid
+    MULTI_CHAR_REPLACEMENTS = {
+        '...', '<<', '>>', '[[', ']]', '{{', '}}',  # Special sequences
+        '1/2', '1/3', '2/3', '1/4', '3/4',          # Common fractions
+        '1/5', '2/5', '3/5', '4/5',
+        '1/6', '5/6',
+        '1/8', '3/8', '5/8', '7/8'
+    }
+
     # Character substitution mappings
     CHAR_REPLACEMENTS = {
         '\\': '⧵',  # Reverse Solidus Operator
+        '/': '⧸',   # Big Solidus (for paths and non-fractions)
+        '1/2': '½', # Fraction One Half
+        '1/3': '⅓', # Fraction One Third
+        '2/3': '⅔', # Fraction Two Thirds
+        '1/4': '¼', # Fraction One Quarter
+        '3/4': '¾', # Fraction Three Quarters
+        '1/5': '⅕', # Fraction One Fifth
+        '2/5': '⅖', # Fraction Two Fifths
+        '3/5': '⅗', # Fraction Three Fifths
+        '4/5': '⅘', # Fraction Four Fifths
+        '1/6': '⅙', # Fraction One Sixth
+        '5/6': '⅚', # Fraction Five Sixths
+        '1/8': '⅛', # Fraction One Eighth
+        '3/8': '⅜', # Fraction Three Eighths
+        '5/8': '⅝', # Fraction Five Eighths
+        '7/8': '⅞', # Fraction Seven Eighths
         ':': 'ː',   # Modifier Letter Triangular Colon
         '*': '✱',   # Heavy Asterisk
         '?': '⁇',   # Reversed Question Mark
@@ -288,6 +313,7 @@ class FileRenamer:
     }
 
     # Common units in filenames that need specific capitalization
+    R = CHAR_REPLACEMENTS  # Shorthand for readability
     UNIT_PATTERNS = {
         # Storage (k lowercase, M/G/T uppercase + B)
         r'\d+kb': lambda s: f"{s[:-2]}kB",  # 5kb -> 5kB
@@ -306,18 +332,54 @@ class FileRenamer:
         r'\d+l\b': lambda s: f"{s[:-1]}L",  # 5l -> 5L
         r'\d+[kmgt]l\b': lambda s: f"{s[:-2]}{s[-2].lower()}L",  # 5ml -> 5mL
 
+        # Greek letter units (always uppercase)
+        r'\d+ω\b': lambda s: f"{s[:-1]}Ω",  # 100ω -> 100Ω
+
+        # Single-letter SI units (W, V, A, J, N)
+        r'\d+w\b': lambda s: f"{s[:-1]}W",   # 100w -> 100W (Watt)
+        r'\d+v\b': lambda s: f"{s[:-1]}V",   # 5v -> 5V (Volt)
+        r'\d+a\b': lambda s: f"{s[:-1]}A",   # 5a -> 5A (Ampere)
+        r'\d+j\b': lambda s: f"{s[:-1]}J",   # 100j -> 100J (Joule)
+        r'\d+n\b': lambda s: f"{s[:-1]}N",   # 10n -> 10N (Newton)
+
+        # SI prefixes for single-letter units
+        # k (kilo) is lowercase, M/G/T uppercase
+        r'\d+k[wvajn]\b': lambda s: f"{s[:-2]}k{s[-1].upper()}", # 5kw -> 5kW
+        r'\d+[mgt][wvajn]\b': lambda s: f"{s[:-2]}{s[-2].upper()}{s[-1].upper()}", # 5mw -> 5MW, 5gw -> 5GW, 5tw -> 5TW
+
+        # Temperature units (always uppercase)
+        r'\d+k\b': lambda s: f"{s[:-1]}K",   # 5k -> 5K (Kelvin)
+        r'\d+c\b': lambda s: f"{s[:-1]}C",   # 25c -> 25C (Celsius)
+        r'\d+f\b': lambda s: f"{s[:-1]}F",   # 75f -> 75F (Fahrenheit)
+
+        # Two-letter units
+        r'\d+pa\b': lambda s: f"{s[:-2]}Pa",  # 100pa -> 100Pa
+        r'\d+kpa\b': lambda s: f"{s[:-3]}kPa",  # 5kpa -> 5kPa
+        r'\d+[mgt]pa\b': lambda s: f"{s[:-3]}{s[-3].upper()}Pa",  # 5mpa -> 5MPa, 5gpa -> 5GPa
+
+        r'\d+wh\b': lambda s: f"{s[:-2]}Wh",  # 100wh -> 100Wh
+        r'\d+kwh\b': lambda s: f"{s[:-3]}kWh",  # 5kwh -> 5kWh
+        r'\d+[mgt]wh\b': lambda s: f"{s[:-3]}{s[-3].upper()}Wh",  # 5mwh -> 5MWh, 5gwh -> 5GWh
+
+        r'\d+va\b': lambda s: f"{s[:-2]}VA",  # 100va -> 100VA
+        r'\d+kva\b': lambda s: f"{s[:-3]}kVA",  # 5kva -> 5kVA
+        r'\d+[mgt]va\b': lambda s: f"{s[:-3]}{s[-3].upper()}VA",  # 5mva -> 5MVA, 5gva -> 5GVA
+
         # Distance (m lowercase for meter)
         r'\d+[kmgt]m\b': lambda s: f"{s[:-1]}{s[-1].lower()}",  # 5KM -> 5km
 
-        # Imperial units (naturally lowercase after digits)
+        # Imperial/British units (naturally lowercase after digits)
         # Length: ft, in, mi
         # Volume: oz, qt, gal
+        # Weight: lb, oz
+        # Temperature: F (handled above with other temperature units)
 
-        # Metric speed with prefixes (lowercase m)
-        r'\d+[kmgt]m/h\b': lambda s: f"{s[:-3]}{s[-3].lower()}m/h",  # 80KM/h -> 80km/h
-        r'\d+[kmgt]m/hr\b': lambda s: f"{s[:-4]}{s[-4].lower()}m/hr",  # 80KM/hr -> 80km/hr
-
-        # Imperial speed naturally lowercase: mi/h, mi/hr, mph
+        # Speed units
+        # Metric (lowercase m for meter)
+        r'\d+[kmgt]m/h\b': lambda s: f"{s[:-3]}{s[-3].lower()}m{R['/']}h",  # 80KM/h -> 80km⧸h
+        r'\d+[kmgt]m/hr\b': lambda s: f"{s[:-4]}{s[-4].lower()}m{R['/']}hr",  # 80KM/hr -> 80km⧸hr
+        # Imperial speed (naturally lowercase)
+        # mph, mi⧸h, mi⧸hr
     }
 
     # Common words that should not be capitalized in titles
@@ -364,10 +426,10 @@ class FileRenamer:
                     f"Invalid type in CHAR_REPLACEMENTS: {original_char} -> {replacement_char}. "
                     "Both key and value must be strings."
                 )
-            if len(original_char) != 1 and original_char != '...' and original_char not in {'<<', '>>', '[[', ']]', '{{', '}}'}:
+            if len(original_char) != 1 and original_char not in cls.MULTI_CHAR_REPLACEMENTS:
                 raise ValueError(
                     f"Invalid original character in CHAR_REPLACEMENTS: {original_char}. "
-                    "Original character must be a single character, '...', or a valid bracket sequence."
+                    "Original character must be a single character or one of the allowed multi-character sequences."
                 )
             if not replacement_char:
                 raise ValueError(
