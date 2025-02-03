@@ -115,7 +115,7 @@ class TestFileRenamer(unittest.TestCase):
         Only trailing periods are removed.
         Multiple question marks are replaced with one ⁇.
         Ampersands (&) are replaced with 'and'.
-        Three or more periods are replaced with ellipsis character.
+        Three or more dots become ellipsis
         """
         R = FileRenamer.CHAR_REPLACEMENTS  # Shorthand for readability
 
@@ -187,7 +187,7 @@ class TestFileRenamer(unittest.TestCase):
             ('What??? Really???.txt', f'What{qmark} Really{qmark}.txt'),
             ('Hello!!! World!!!.txt', 'Hello! World!.txt'),
             ('Multiple.....Dots...Here.txt', f'Multiple{ellipsis}Dots{ellipsis}Here.txt'),
-            ('Multiple... Dots... With Spaces.txt', f'Multiple{ellipsis} Dots{ellipsis} With Spaces.txt'),
+            ('Multiple... Dots... With Spaces.txt', f'Multiple{ellipsis} Dots{ellipsis} with Spaces.txt'),
             ('file... middle text', f'File{ellipsis} Middle Text'),
         ]
 
@@ -568,13 +568,13 @@ class TestFileRenamer(unittest.TestCase):
 
             # Video/Audio
             ("movie 4k hdr 60fps.mkv", "Movie 4K HDR 60fps.mkv"),
-            ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.WAV"),
+            ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.wav"), # trailing .wav is a file extension, would have been WAV if followed by text
             ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
 
-            # Mixed cases
-            ("dr. smith md in ny on bbc.mp4", "Dr. Smith MD in NY on BBC.mp4"),
-            ("6pm est fbi report on hbo.txt", "6PM EST FBI Report on HBO.txt"),
-            ("ca-based ceo's irs audit.pdf", "CA-Based CEO's IRS Audit.pdf"),
+            # Frequency
+            ("100hz tone.wav", "100Hz Tone.wav"),
+            ("2.4ghz wifi.pdf", "2.4GHz Wi-Fi.pdf"),
+            ("440hz a4 note.mp3", "440Hz A4 Note.mp3"),
         ]
 
         for original, expected in test_cases:
@@ -583,6 +583,191 @@ class TestFileRenamer(unittest.TestCase):
                            f"\nInput:    {original!r}\n"
                            f"Expected: {expected!r}\n"
                            f"Got:      {result!r}")
+
+    def test_metric_units(self):
+        """Test handling of numbers with metric units.
+
+        Test cases include:
+        1. Basic units (m, g, L)
+        2. Prefixed units (km, MHz, GB)
+        3. Mixed case input
+        4. Multiple units in same name
+        5. Special units (Ω, µ)
+        """
+        test_cases = [
+            # Basic units
+            ("100m dash.mp4", "100m Dash.mp4"),
+            ("5l water.jpg", "5L Water.jpg"),
+            ("500g flour.txt", "500g Flour.txt"),
+
+            # Prefixed units
+            ("50km run.gpx", "50km Run.gpx"),
+            ("2gb ram.txt", "2GB RAM.txt"),
+            ("100mhz processor.pdf", "100MHz Processor.pdf"),
+            ("5ml solution.doc", "5mL Solution.doc"),
+            ("2tb hard drive.txt", "2TB Hard Drive.txt"),
+
+            # Mixed case handling
+            ("10Km race.jpg", "10km Race.jpg"),
+            ("500Ml bottle.png", "500mL Bottle.png"),
+            ("1TB ssd.txt", "1TB SSD.txt"),
+
+            # Multiple units in name
+            ("100km 2l water.gpx", "100km 2L Water.gpx"),
+            ("5gb ram 2tb storage.txt", "5GB RAM 2TB Storage.txt"),
+
+            # Special characters
+            ("10µm filter.pdf", "10µm Filter.pdf"),
+            ("100Ω resistor.txt", "100Ω Resistor.txt"),
+
+            # Common computer units
+            ("500gb ssd vs 2tb hdd.txt", "500GB SSD vs 2TB HDD.txt"),
+            ("4kb cache 2mb ram.txt", "4kB Cache 2MB RAM.txt"),
+
+            # Time units
+            ("5min timer.txt", "5min Timer.txt"),
+            ("2h workout.mp4", "2h Workout.mp4"),
+
+            # Power and energy
+            ("100w bulb.txt", "100W Bulb.txt"),
+            ("5kwh usage.csv", "5kWh Usage.csv"),
+            ("50mw power.pdf", "50mW Power.pdf"),
+
+            # Frequency
+            ("100hz tone.wav", "100Hz Tone.wav"),
+            ("2.4ghz wifi.pdf", "2.4GHz Wi-Fi.pdf"),
+            ("440hz a4 note.mp3", "440Hz A4 Note.mp3"),
+        ]
+
+        for original, expected in test_cases:
+            result = self.renamer._clean_filename(original)
+            self.assertEqual(result, expected,
+                           f"\nInput:    {original!r}\n"
+                           f"Expected: {expected!r}\n"
+                           f"Got:      {result!r}")
+
+    def test_units_in_filenames(self):
+        """Test handling of common units in filenames.
+
+        Tests:
+        1. Storage units (kB, MB, GB, TB)
+        2. Frequencies in media files (kHz, MHz, GHz)
+        3. Time (AM, PM)
+        4. Mixed case variants
+        """
+        test_cases = [
+            # Storage units - most common in filenames
+            ("5kb file.txt", "5kB File.txt"),
+            ("2mb cache.dat", "2MB Cache.dat"),
+            ("500gb drive.img", "500GB Drive.img"),
+            ("2tb backup.zip", "2TB Backup.zip"),
+
+            # Mixed case variants
+            ("10KB test.txt", "10kB Test.txt"),
+            ("5MB data.bin", "5MB Data.bin"),
+            ("1TB drive.vhd", "1TB Drive.vhd"),
+
+            # Multiple units in filename
+            ("5gb ram 2tb drive.txt", "5GB RAM 2TB Drive.txt"),
+
+            # Frequencies in media files
+            ("48khz audio.wav", "48kHz Audio.wav"),
+            ("2.4ghz recording.mp3", "2.4GHz Recording.mp3"),
+            ("96khz 24bit.flac", "96kHz 24bit.flac"),
+
+            # Time
+            ("5pm meeting.txt", "5PM Meeting.txt"),
+            ("9am alarm.mp3", "9AM Alarm.mp3"),
+            ("recorded-2pm-5pm.wav", "Recorded-2PM-5PM.wav"),
+            ("5l water.txt", "5L Water.txt"),
+            ("500ml bottle.pdf", "500mL Bottle.pdf"),
+            ("2kl tank.doc", "2kL Tank.doc"),
+            ("100km walk.gpx", "100km Walk.gpx"),
+            ("5m pole.txt", "5m Pole.txt"),
+            ("50KM trail.kml", "50km Trail.kml"),
+            ("80km/h limit.txt", "80km/h Limit.txt"),
+            ("100KM/h max.pdf", "100km/h Max.pdf"),
+            ("60km/hr speed.doc", "60km/hr Speed.doc"),
+            ("30KM/hr zone.txt", "30km/hr Zone.txt"),
+        ]
+
+        for original, expected in test_cases:
+            result = self.renamer._clean_filename(original)
+            self.assertEqual(result, expected,
+                           f"\nInput:    {original!r}\n"
+                           f"Expected: {expected!r}\n"
+                           f"Got:      {result!r}")
+
+    def test_abbreviations_and_units(self):
+        """Test handling of abbreviations and units.
+
+        Test cases include:
+        1. Mixed abbreviations and units
+        2. Abbreviations with units
+        3. Units with abbreviations
+        """
+        test_cases = [
+            # Mixed abbreviations and units
+            ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.wav"), # trailing .wav is a file extension, would have been WAV if followed by text
+            ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
+
+            # Mixed cases
+            ("dr. smith md in ny on bbc.mp4", "Dr. Smith MD in NY on BBC.mp4"),
+            ("6pm est fbi report on hbo.txt", "6PM EST FBI Report on HBO.txt"),
+            ("ca-based ceo's irs audit.pdf", "CA-Based CEO's IRS Audit.pdf"),
+
+            # Unit patterns
+            ("5kb file.txt", "5kB File.txt"),
+            ("2mb cache.dat", "2MB Cache.dat"),
+            ("500gb drive.img", "500GB Drive.img"),
+            ("10KB test.txt", "10kB Test.txt"),
+            ("48khz audio.wav", "48kHz Audio.wav"),
+            ("2.4ghz wifi.pdf", "2.4GHz Wi-Fi.pdf"),
+            ("5pm meeting.txt", "5PM Meeting.txt"),
+            ("9am alarm.mp3", "9AM Alarm.mp3"),
+        ]
+
+        for original, expected in test_cases:
+            result = self.renamer._clean_filename(original)
+            self.assertEqual(result, expected,
+                           f"\nInput:    {original!r}\n"
+                           f"Expected: {expected!r}\n"
+                           f"Got:      {result!r}")
+
+    def test_lowercase_words_after_triggers(self):
+        """Test that lowercase words are capitalized after trigger characters."""
+        ellipsis = self.renamer.CHAR_REPLACEMENTS['...']
+        tri_colon = self.renamer.CHAR_REPLACEMENTS[':']
+        left_angle = self.renamer.CHAR_REPLACEMENTS['<']
+        right_angle = self.renamer.CHAR_REPLACEMENTS['>']
+        question = self.renamer.CHAR_REPLACEMENTS['?']
+        test_cases = [
+            # After period
+            ('hello.the world', 'Hello. The World'),
+            ('hello.the.world', 'Hello.The.World'),
+            ('hello. the world', 'Hello. The World'),
+            # After ellipsis
+            (f'hello...the world', f'Hello{ellipsis} The World'),
+            (f'hello... the world', f'Hello{ellipsis} The World'),
+            # After opening brackets (with and without space)
+            ('hello (the) world', 'Hello (The) World'),
+            ('hello ( the ) world', 'Hello ( The ) World'),
+            ('hello [the] world', 'Hello [The] World'),
+            ('hello [ the ] world', 'Hello [ The ] World'),
+            ('hello {the} world', 'Hello {The} World'),
+            ('hello { the } world', 'Hello { The } World'),
+            (f'hello <the> world', f'Hello {left_angle}The{right_angle} World'),
+            (f'hello < the > world', f'Hello {left_angle}The{right_angle} World'),
+            # After exclamation and colon
+            ('hello!the world', 'Hello! The World'),
+            ('hello! the world', 'Hello! The World'),
+            (f'hello:the world', f'Hello{tri_colon} The World'),
+            (f'hello: the world', f'Hello{tri_colon} The World'),
+        ]
+        for original, expected in test_cases:
+            with self.subTest(original=original):
+                result = self.renamer._clean_filename(original)
+                self.assertEqual(result, expected)
 
 if __name__ == '__main__':
     unittest.main()

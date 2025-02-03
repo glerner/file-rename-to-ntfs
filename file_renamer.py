@@ -246,7 +246,7 @@ class FileRenamer:
 
         # Technology Standards and Formats
         'CD', 'DVD', 'GB', 'HD', 'HDMI', 'VGA', 'HTML', 'HTTP', 'HTTPS',
-        'IP', 'ISO', 'KB', 'MB', 'MP3', 'MP4', 'PDF', 'RAM', 'ROM',
+        'IP', 'ISO', 'KB', 'MB', 'MP3', 'MP4', 'MPEG', 'PDF', 'RAM', 'ROM',
         'SQL', 'TB', 'USB', 'VHS', 'XML', 'JSON', 'PHP', 'Wi-Fi',
         'CPU', 'GPU', 'SSD', 'HDD', 'NVMe', 'SATA', 'RAID', 'LAN', 'WAN',
         'DNS', 'FTP', 'SSH', 'SSL', 'TLS', 'URL', 'URI', 'API', 'SDK',
@@ -275,7 +275,72 @@ class FileRenamer:
         'DIY', 'FAQ', 'ASAP', 'IMAX', 'STEM',
 
         # Software/Platforms
-        'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL'
+        'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL',
+    }
+
+    # Words with specific capitalization (not uppercase, not regular title case)
+    SPECIAL_CASE_WORDS = {
+        'iPad', 'iPhone', 'iPod', 'iTunes', 'iMac',  # Apple products
+        'macOS', 'iOS',  # Operating systems
+        'MySQL', 'NoSQL', 'PostgreSQL',  # Databases
+        'JavaScript', 'TypeScript', 'WordPress',  # Software,
+        'Wi-Fi'
+    }
+
+    # Common units in filenames that need specific capitalization
+    UNIT_PATTERNS = {
+        # Storage (k lowercase, M/G/T uppercase + B)
+        r'\d+kb': lambda s: f"{s[:-2]}kB",  # 5kb -> 5kB
+        r'\d+KB': lambda s: f"{s[:-2]}kB",  # 5KB -> 5kB
+        r'\d+[mgt]b': lambda s: f"{s[:-2]}{s[-2].upper()}B",  # 5mb -> 5MB
+
+        # Frequency (k lowercase, M/G/T uppercase + Hz)
+        r'\d+hz\b': lambda s: f"{s[:-2]}Hz",  # 100hz -> 100Hz
+        r'\d+khz': lambda s: f"{s[:-3]}kHz",  # 100khz -> 100kHz
+        r'\d+[mgt]hz': lambda s: f"{s[:-3]}{s[-3].upper()}Hz",  # 100mhz -> 100MHz
+
+        # Time (always uppercase)
+        r'\d+[ap]m': lambda s: f"{s[:-2]}{s[-2:].upper()}",  # 5pm -> 5PM
+
+        # Liters (L always uppercase)
+        r'\d+l\b': lambda s: f"{s[:-1]}L",  # 5l -> 5L
+        r'\d+[kmgt]l\b': lambda s: f"{s[:-2]}{s[-2].lower()}L",  # 5ml -> 5mL
+
+        # Distance (m lowercase for meter)
+        r'\d+[kmgt]m\b': lambda s: f"{s[:-1]}{s[-1].lower()}",  # 5KM -> 5km
+
+        # Imperial units (naturally lowercase after digits)
+        # Length: ft, in, mi
+        # Volume: oz, qt, gal
+
+        # Metric speed with prefixes (lowercase m)
+        r'\d+[kmgt]m/h\b': lambda s: f"{s[:-3]}{s[-3].lower()}m/h",  # 80KM/h -> 80km/h
+        r'\d+[kmgt]m/hr\b': lambda s: f"{s[:-4]}{s[-4].lower()}m/hr",  # 80KM/hr -> 80km/hr
+
+        # Imperial speed naturally lowercase: mi/h, mi/hr, mph
+    }
+
+    # Common words that should not be capitalized in titles
+    LOWERCASE_WORDS = {
+        # Articles
+        'a', 'an', 'the',
+
+        # Coordinating Conjunctions
+        'and', 'but', 'for', 'nor', 'or', 'so', 'yet',
+
+        # Short Prepositions (under 5 letters)
+        'at', 'by', 'down', 'for', 'from', 'in', 'into',
+        'like', 'near', 'of', 'off', 'on', 'onto', 'out',
+        'over', 'past', 'to', 'up', 'upon', 'with',
+
+        # Common Particles
+        'as', 'if', 'how', 'than', 'vs', 'vs.',
+
+        # Common Words in Media Titles
+        'part', 'vol', 'vs', 'feat', 'ft', 'remix',
+
+        # Be Verbs (when not first/last)
+        'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
     }
 
     # Debug mode flag
@@ -545,6 +610,32 @@ class FileRenamer:
                     prev_part = part
                     continue
 
+                # Check for special case words (Wi-Fi, etc.)
+                word_lower = word.lower()
+                if word_lower == 'wifi':  # Convert all variants to Wi-Fi
+                    titled_parts.append('Wi-Fi')
+                    prev_part = part
+                    continue
+                for special_word in self.SPECIAL_CASE_WORDS:
+                    if word_lower == special_word.lower():
+                        titled_parts.append(special_word)
+                        prev_part = part
+                        continue
+
+                # Handle common unit patterns (GB, MHz, etc.)
+                found_unit = False
+                word_lower = word.lower()
+                for pattern, formatter in self.UNIT_PATTERNS.items():
+                    if re.match(pattern, word_lower):
+                        self.debug_print(f"Found unit pattern: {word!r}")
+                        titled_parts.append(formatter(word_lower))
+                        prev_part = part
+                        found_unit = True
+                        break
+
+                if found_unit:
+                    continue
+
                 # Check if this is a contraction
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
                     self.debug_print(f"\nFound contraction: {word!r}")
@@ -589,8 +680,9 @@ class FileRenamer:
                     prev_part in self.OPENING_BRACKETS or  # After any opening bracket
                     word == last_real_word  # Last word
                 )
-                self.debug_print(f"Should capitalize:    {should_capitalize}\n")
-
+                self.debug_print(f"Should capitalize:    {should_capitalize}")
+                if should_capitalize:
+                    self.debug_print(f"  Reason: {'First word' if not titled_parts else 'Last word' if word == last_real_word else 'After period/ellipsis' if prev_part in {'.', self.CHAR_REPLACEMENTS['...']} else 'After opening bracket'}")
                 if (word in self.LOWERCASE_WORDS and
                     titled_parts and      # Not first word
                     not should_capitalize and  # Not after period/ellipsis
