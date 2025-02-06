@@ -23,23 +23,25 @@ Date: 2025-01-27
 import os
 import re
 import sys
+import errno
 from typing import Dict, List, Tuple
 from pathlib import Path
 import unicodedata
 import logging
 
-def is_debug_mode() -> bool:
+def get_debug_level() -> str:
     """
-    Detect if we're running in debug mode. This is true if:
-    1. Running under unittest (detected via unittest in sys.modules)
-    2. --debug flag was passed
-    3. RENAMER_DEBUG environment variable is set
+    Get the debug level from environment. Returns one of:
+    - 'detail': Show all processing steps (RENAMER_DEBUG=detail)
+    - 'normal': Show key transformations only (RENAMER_DEBUG=1 or running tests)
+    - 'off': No debug output (default)
     """
-    return (
-        'unittest' in sys.modules or
-        '--debug' in sys.argv or
-        os.environ.get('RENAMER_DEBUG') == '1'
-    )
+    debug_env = os.environ.get('RENAMER_DEBUG')
+    if debug_env == 'detail':
+        return 'detail'
+    if 'unittest' in sys.modules or '--debug' in sys.argv or debug_env:
+        return 'normal'
+    return 'off'
 
 class FileRenamer:
     """Handles the conversion of filenames from Ext4 to NTFS format.
@@ -403,10 +405,12 @@ class FileRenamer:
 
         # Speed units
         # Metric (lowercase m for meter)
-        r'\d+[kmgt]m/h\b': lambda s: f"{s[:-3]}{s[-3].lower()}m{R['/']}h",  # 80KM/h -> 80km⧸h
-        r'\d+[kmgt]m/hr\b': lambda s: f"{s[:-4]}{s[-4].lower()}m{R['/']}hr",  # 80KM/hr -> 80km⧸hr
+        r'\b\d+\s*[kmgt]m/h\b': lambda s: re.sub(r'(\d+)\s*([kmgt])m/h',
+            lambda m: f"{m.group(1)}{m.group(2).lower()}m{R['/']}h", s),  # 80KM/h -> 80km/h
+        r'\b\d+\s*[kmgt]m/hr\b': lambda s: re.sub(r'(\d+)\s*([kmgt])m/hr',
+            lambda m: f"{m.group(1)}{m.group(2).lower()}m{R['/']}hr", s),  # 80KM/hr -> 80km/hr
         # Imperial speed (naturally lowercase)
-        # mph, mi⧸h, mi⧸hr
+        # mph, mi/h, mi/hr  (slash will be replaced with special char)
     }
 
     # Common words that should not be capitalized in titles
@@ -433,13 +437,21 @@ class FileRenamer:
     }
 
     # Debug mode flag
-    _debug = is_debug_mode()
+    _debug_level = get_debug_level()
+    _debug = False  # Initialize debug flag for command line use
 
     @classmethod
-    def debug_print(cls, *args, **kwargs):
-        """Print only if in debug mode"""
-        if cls._debug:
-            print(*args, **kwargs)
+    def debug_print(cls, *args, level='normal', **kwargs):
+        """Print debug message if level matches current debug level
+
+        Args:
+            level: Required debug level ('normal' or 'detail')
+        """
+        if cls._debug_level == 'off':
+            return
+        if level == 'detail' and cls._debug_level != 'detail':
+            return
+        print(*args, **kwargs)
 
     @classmethod
     def validate_replacements(cls) -> None:
@@ -518,8 +530,6 @@ class FileRenamer:
         Returns:
             Cleaned text with trailing special characters removed
         """
-        self.debug_print(f"{debug_prefix}Before trailing cleanup:        {text!r}")
-
         while text:
             changed = False
 
@@ -549,19 +559,17 @@ class FileRenamer:
             if not changed:
                 break  # No more trailing characters to remove
 
-        self.debug_print(f"{debug_prefix}After trailing cleanup:         {text!r}\n")
         return text
 
     def _clean_filename(self, filename: str) -> str:
         """Clean filename to be NTFS-compatible."""
+
         try:
             filename.encode('utf-16')
         except UnicodeEncodeError as e:
             raise ValueError(f"Input filename contains invalid characters: {e}")
 
-        self.debug_print(f"\n{'='*50}")
-        self.debug_print(f"Starting to process: {filename!r}")
-        self.debug_print(f"{'='*50}\n")
+        self.debug_print(f"\nProcessing: {filename!r}", level='normal')
 
         # Split into name and extension with rules:
         # 1. Extensions cannot contain spaces
@@ -594,34 +602,47 @@ class FileRenamer:
         # - Always use lowercase for the extension
         preserve_name_case = extension.lower() in self.PRESERVE_CASE_EXTENSIONS
 
+        # Get reference to replacements dict for cleaner code
+        R = FileRenamer.CHAR_REPLACEMENTS
+
         # First normalize all whitespace to single spaces
-        self.debug_print(f"Splitting name: {name!r} (extension: {extension!r})")
-        self.debug_print(f"Before whitespace normalization: {name!r}")
+        # Debug processing steps
+        self.debug_print(f"Splitting name: {name!r} (extension: {extension!r})", level='detail')
+
+        # Normalize whitespace
+        # self.debug_print(f"Before whitespace normalization: {name!r}", level='detail')  # Commented for easy re-enabling
         name = re.sub(r'[\n\r\t\f\v]+', ' ', name)  # Convert newlines and other whitespace to spaces
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
-        self.debug_print(f"After whitespace normalization:  {name!r}\n")
+        # self.debug_print(f"After whitespace normalization:  {name!r}\n", level='detail')
 
         # Replace special characters
-        self.debug_print(f"Before special char replacement: {name!r}")
+        self.debug_print(f"Before replacements: {name!r}", level='normal')
 
-        # Handle fractions (digit/digit with optional spaces)
-        name = re.sub(r'(\d)\s*/\s*(\d)', r'\1⧸\2', name)
+        # Handle fractions first (digit/digit with optional spaces)
+        name = re.sub(r'(\d)\s*/\s*(\d)', fr'\1{R["/"]}\2', name)
 
-        # Handle other special characters
+        # Handle multi-char sequences (like ellipsis, brackets)
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
-            if original_char == '...':
-                # Handle ellipsis separately to avoid over-replacement
-                self.debug_print(f"Before ellipsis replacement:    {name!r}")
-                name = re.sub(r'\.{3,}', replacement_char, name)
-                self.debug_print(f"After ellipsis replacement:     {name!r}")
-            elif original_char != '/':
-                # Replace multiple occurrences with single replacement
-                # Skip the regular slash replacement since we handle it specially for fractions
-                name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
-        self.debug_print(f"After special char replacement:  {name!r}\n")
+            if len(original_char) > 1:  # Multi-char replacement
+                if original_char in name:
+                    self.debug_print(f"  Multi-char: {original_char!r} -> {replacement_char!r}", level='detail')
+                    if original_char == '...':
+                        # Handle ellipsis specially to match 3 or more dots
+                        name = re.sub(r'\.{3,}', replacement_char, name)
+                    else:
+                        name = name.replace(original_char, replacement_char)
 
-        name = name.strip()  # Remove leading/trailing spaces
-        self.debug_print(f"After strip:                    {name!r}\n")
+        # Handle single-char replacements
+        for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
+            if len(original_char) == 1:  # Single-char replacements
+                if original_char in name:
+                    self.debug_print(f"  Single-char: {original_char!r} -> {replacement_char!r}", level='detail')
+                    name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
+
+        self.debug_print(f"After replacements: {name!r}", level='normal')
+
+        # Clean up whitespace
+        name = name.strip()
 
         # Remove trailing periods and ellipsis
         # These are never allowed at the end, regardless of what comes before
@@ -672,7 +693,7 @@ class FileRenamer:
 
             # Track which parts we've processed and why
             processed_parts = {}
-            
+
             # Now process each part
             for i, part in enumerate(parts):
                 if i in processed_parts:
@@ -814,11 +835,11 @@ class FileRenamer:
                     # Handle found abbreviation
                     original_parts = parts[i:j+1]
                     abbrev_debug = f"[ABBREV] {found_abbrev!r} from {original_parts!r}"
-                    
+
                     # Mark all parts that make up this abbreviation as processed
                     for idx in range(i, j+1):
                         processed_parts[idx] = f"part of {abbrev_debug}"
-                    
+
                     if '.' in found_abbrev:
                         # Split into parts to preserve periods
                         parts_to_add = re.split(r'([.])', found_abbrev)
@@ -827,7 +848,7 @@ class FileRenamer:
                     else:
                         titled_parts.append(found_abbrev)
                         prev_part = found_abbrev  # Keep the full abbreviation as previous part
-                    
+
                     self.debug_print(abbrev_debug)
                     continue
 
@@ -916,14 +937,9 @@ class FileRenamer:
 
         # Always use lowercase for extensions, whether known or unknown
         if extension:
-            result = f"===={name}.{extension.lower()}"
+            result = f"{name}.{extension.lower()}"
         else:
-            result = f"===={name}"
-
-        self.debug_print(f"\n{'='*50}")
-        self.debug_print(f"Finished processing: {filename!r}")
-        self.debug_print(f"Result: {result!r}")
-        self.debug_print(f"{'='*50}\n")
+            result = name
 
         return result
 
@@ -933,7 +949,13 @@ class FileRenamer:
 
         Returns:
             List[Tuple[str, str]]: List of (original_name, new_name) pairs
+
+        Note:
+            Some filesystems may not allow certain ASCII special characters in filenames.
+            In such cases, we detect this and report it, then proceed with the Unicode
+            replacement character anyway since that's our goal.
         """
+        self.debug_print("Starting to process files in directory: {}".format(self.directory), level='normal')
         changes = []
 
         for item in self.directory.iterdir():
@@ -953,7 +975,26 @@ class FileRenamer:
                 changes.append((original_name, new_name))
 
                 if not self.dry_run:
-                    item.rename(self.directory / new_name)
+                    try:
+                        item.rename(self.directory / new_name)
+                    except OSError as e:
+                        if e.errno in (errno.EINVAL, errno.EACCES):
+                            self.debug_print(f"Note: Filesystem does not allow special characters.")
+                            self.debug_print(f"  Original name: '{original_name}'")
+                            self.debug_print(f"  Attempted new name: '{new_name}'")
+                            self.debug_print(f"  Error: {e}")
+                            self.debug_print("This is expected on some filesystems. Proceeding with Unicode replacement...")
+                            # Create a new file with the Unicode replacement directly
+                            try:
+                                # First try to create the new file
+                                (self.directory / new_name).write_bytes(item.read_bytes())
+                                # If successful, remove the old file
+                                item.unlink()
+                            except OSError as e2:
+                                self.debug_print(f"Error: Could not create new file '{new_name}': {e2}")
+                                raise
+                        else:
+                            raise
 
         return changes
 
@@ -979,7 +1020,9 @@ def main():
     args = parser.parse_args()
 
     # Update debug mode based on command line flag
-    FileRenamer._debug = FileRenamer._debug or args.debug
+    if args.debug:
+        FileRenamer._debug = True
+        os.environ['RENAMER_DEBUG'] = 'detail'  # Enable detailed debug output
 
     renamer = FileRenamer(args.directory, dry_run=args.dry_run)
     changes = renamer.process_files()

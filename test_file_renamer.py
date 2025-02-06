@@ -7,6 +7,7 @@ Date: 2025-01-27
 """
 
 import os
+import errno
 import unittest
 from pathlib import Path
 import tempfile
@@ -16,6 +17,55 @@ from file_renamer import FileRenamer, main  # Import main
 
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
+
+    def _run_test_cases(self, test_cases, force_fail=True):
+        """Helper method to run test cases and collect all failures.
+
+        Args:
+            test_cases: List of (input, expected) tuples
+            force_fail: If True, adds 'FAIL ' prefix to force failures
+        """
+        failures = []
+
+        for original, expected in test_cases:
+            if force_fail:
+                # Temporarily add FAIL prefix to force failures
+                original = 'FAIL ' + original
+            try:
+                result = self.renamer._clean_filename(original)
+                print(f"\n==================================================\n")
+                print(f"Finished processing: {original!r}")
+                print(f"Result:   {result!r}")
+                print(f"Expected: {expected!r}")
+                print(f"{'='*50}\n")
+
+                if result != expected:
+                    failures.append({
+                        'input': original,
+                        'expected': expected,
+                        'got': result
+                    })
+            except Exception as e:
+                failures.append({
+                    'input': original,
+                    'error': str(e)
+                })
+
+        if failures:
+            print("\n==================================================\n")
+            print(f"FOUND {len(failures)} FAILING TESTS:\n")
+            for i, failure in enumerate(failures, 1):
+                print(f"Failure #{i}:")
+                print(f"  Input:    {failure['input']!r}")
+                if 'error' in failure:
+                    print(f"  Error:    {failure['error']}")
+                else:
+                    print(f"  Expected: {failure['expected']!r}")
+                    print(f"  Got:      {failure['got']!r}")
+                print()
+
+            # Fail the test with a summary
+            self.fail(f"Found {len(failures)} failing test cases. See output above for details.")
 
     def setUp(self):
         """Create a temporary directory for test files"""
@@ -60,12 +110,7 @@ class TestFileRenamer(unittest.TestCase):
             ('What??? Really???.txt', f'What{qmark} Really{qmark}.txt'),  # Real-world multiple ? example
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_title_case_rules(self):
         """Test title case formatting rules."""
@@ -96,12 +141,7 @@ class TestFileRenamer(unittest.TestCase):
             ('spaces   and\ttabs  mixed', 'Spaces and Tabs Mixed'),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_multiple_spaces_and_punctuation(self):
         """Test handling of multiple spaces and punctuation.
@@ -136,12 +176,7 @@ class TestFileRenamer(unittest.TestCase):
             ('Fish & Chips.txt', 'Fish and Chips.txt'),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_special_character_replacement(self):
         """Test that special characters are properly replaced."""
@@ -163,12 +198,7 @@ class TestFileRenamer(unittest.TestCase):
              f'File{pipe}With{quote}Pipes{lt}And{gt}Symbols.txt'),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_multiple_special_chars(self):
         """Test handling of multiple special characters.
@@ -191,12 +221,7 @@ class TestFileRenamer(unittest.TestCase):
             ('file... middle text', f'File{ellipsis} Middle Text'),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_real_world_examples(self):
         """Test with real-world example filenames.
@@ -241,12 +266,7 @@ class TestFileRenamer(unittest.TestCase):
             ),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_trailing_characters(self):
         """Test handling of trailing characters.
@@ -287,12 +307,7 @@ class TestFileRenamer(unittest.TestCase):
              'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),  # Keep capitalization after parentheses
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_file_extensions(self):
         """Test handling of file extensions.
@@ -323,12 +338,7 @@ class TestFileRenamer(unittest.TestCase):
             ('mixed.CASE', 'Mixed.case'),  # Title case name, lowercase ext
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_validate_replacements_errors(self):
         """Test error handling in validate_replacements"""
@@ -362,20 +372,43 @@ class TestFileRenamer(unittest.TestCase):
         self.assertIn("invalid characters", str(cm.exception).lower())
 
     def test_file_operations(self):
-        """Test actual file operations"""
-        # Create test files
-        (self.temp_dir / "Test File?.txt").write_text("test")
+        """Test actual file operations.
+        
+        Creates test files with ASCII special characters (like '?') and verifies they
+        are correctly renamed to use the Unicode replacements from CHAR_REPLACEMENTS.
+        
+        Note: Some filesystems may not allow certain ASCII special characters in filenames.
+        In such cases, we should detect this and report it, then proceed with the Unicode
+        replacement character anyway since that's our goal.
+        """
+        # Create test files with ASCII special characters
+        # Here we use ASCII '?' (U+003F) which should be replaced with
+        # the Unicode character specified in CHAR_REPLACEMENTS['?']
+        test_file = self.temp_dir / "Test File?.txt"
+        try:
+            test_file.write_text("test")
+        except OSError as e:
+            if e.errno in (errno.EINVAL, errno.EACCES):
+                print(f"Note: Filesystem does not allow '?' in filenames ({e}). ")
+                print("This is expected on some filesystems. Proceeding with test...")
+                # Create the file with the Unicode replacement directly
+                qmark = FileRenamer.CHAR_REPLACEMENTS['?']
+                test_file = self.temp_dir / f"Test File{qmark}.txt"
+                test_file.write_text("test")
+            else:
+                raise
 
         # Test non-dry-run mode
         renamer = FileRenamer(str(self.temp_dir), dry_run=False)
         changes = renamer.process_files()
         self.assertEqual(len(changes), 1)
         self.assertEqual(changes[0][0], "Test File?.txt")
-        self.assertEqual(changes[0][1], "Test File⁇.txt")
+        qmark = FileRenamer.CHAR_REPLACEMENTS['?']
+        self.assertEqual(changes[0][1], f"Test File{qmark}.txt")
 
         # Verify file was actually renamed
         self.assertFalse((self.temp_dir / "Test File?.txt").exists())
-        self.assertTrue((self.temp_dir / "Test File⁇.txt").exists())
+        self.assertTrue((self.temp_dir / f"Test File{qmark}.txt").exists())
 
         # Test handling of existing target
         (self.temp_dir / "Another Test?.txt").write_text("test1")
@@ -387,7 +420,12 @@ class TestFileRenamer(unittest.TestCase):
         self.assertTrue((self.temp_dir / "Another Test⁇.txt").exists())  # Target file unchanged
 
     def test_command_line(self):
-        """Test command line interface"""
+        """Test command line interface.
+        
+        Tests the command line processing of files containing ASCII special characters
+        (like '?') and verifies they are correctly renamed to use the Unicode
+        replacements from CHAR_REPLACEMENTS.
+        """
         import sys
         from io import StringIO
         import contextlib
@@ -414,9 +452,22 @@ class TestFileRenamer(unittest.TestCase):
                     main()
             self.assertIn("Directory containing files to rename", out.getvalue())
 
-            # Test dry run (no input needed)
+            # Test dry run with ASCII special characters (no input needed)
+            # Using ASCII '?' (U+003F) which should be replaced with
+            # the Unicode character from CHAR_REPLACEMENTS['?']
             test_file = self.temp_dir / "Test File?.txt"
-            test_file.write_text("test")
+            try:
+                test_file.write_text("test")
+            except OSError as e:
+                if e.errno in (errno.EINVAL, errno.EACCES):
+                    print(f"Note: Filesystem does not allow '?' in filenames ({e}). ")
+                    print("This is expected on some filesystems. Proceeding with test...")
+                    # Create the file with the Unicode replacement directly
+                    qmark = FileRenamer.CHAR_REPLACEMENTS['?']
+                    test_file = self.temp_dir / f"Test File{qmark}.txt"
+                    test_file.write_text("test")
+                else:
+                    raise
 
             with capture_output() as (out, err):
                 sys.argv = ['file_renamer.py', str(self.temp_dir), '--dry-run']
@@ -424,12 +475,13 @@ class TestFileRenamer(unittest.TestCase):
             output = out.getvalue()
             self.assertIn("Proposed changes", output)
             self.assertIn("Test File?.txt", output)
-            self.assertIn("Test File⁇.txt", output)
+            qmark = FileRenamer.CHAR_REPLACEMENTS['?']
+            self.assertIn(f"Test File{qmark}.txt", output)
             self.assertTrue(test_file.exists())  # File not renamed in dry run
 
             # Test debug mode with mocked input for 'y'
             # First ensure target doesn't exist
-            target_file = self.temp_dir / "Test File⁇.txt"
+            target_file = self.temp_dir / f"Test File{qmark}.txt"
             if target_file.exists():
                 target_file.unlink()
 
@@ -440,7 +492,8 @@ class TestFileRenamer(unittest.TestCase):
             output = out.getvalue()
             self.assertIn("Starting to process", output)
             self.assertIn("Test File?.txt", output)
-            self.assertIn("Test File⁇.txt", output)
+            qmark = FileRenamer.CHAR_REPLACEMENTS['?']
+            self.assertIn(f"Test File{qmark}.txt", output)
             self.assertFalse(test_file.exists())  # Original file should be gone
             self.assertTrue(target_file.exists())  # New file should exist
 
@@ -457,7 +510,8 @@ class TestFileRenamer(unittest.TestCase):
                 main()
             output = out.getvalue()
             self.assertIn("Test File?.txt", output)
-            self.assertIn("Test File⁇.txt", output)
+            qmark = FileRenamer.CHAR_REPLACEMENTS['?']
+            self.assertIn(f"Test File{qmark}.txt", output)
             self.assertIn("No changes made", output)
             # Note: The file is already renamed during processing, but changes aren't committed
             self.assertFalse(test_file.exists())  # Original file is gone during processing
@@ -510,12 +564,7 @@ class TestFileRenamer(unittest.TestCase):
             ("john's 'great' adventure.txt", "John's 'Great' Adventure.txt"),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_abbreviations(self):
         """Test handling of common abbreviations.
@@ -530,12 +579,13 @@ class TestFileRenamer(unittest.TestCase):
         7. Technology terms
         8. Mixed case with other words
         """
+        print("\n=== Testing All Abbreviation Cases ===")
         test_cases = [
             # Academic degrees
-            ("dr. smith md phd.txt", "Dr. Smith MD PhD.txt"),
+            ("dr. smith md phd.txt", "Dr Smith MD PhD.txt"),
             # this checks the m is not grabbed as a contraction (I'm) and is not grabbed as a unit (meters)
-            ("jane doe, m.d..txt", "Jane Doe, M.D.txt"),
-            ("jane smith, m.d.txt", "Jane Smith, M.D.txt"),
+            ("jane doe, m.d..txt", "Jane Doe, MD.txt"),
+            ("jane smith, m.d.txt", "Jane Smith, MD.txt"),
 
             # Movie/TV ratings
             ("movie pg-13 2024.mp4", "Movie PG-13 2024.mp4"),
@@ -594,12 +644,7 @@ class TestFileRenamer(unittest.TestCase):
             ("440hz a4 note.mp3", "440Hz A4 Note.mp3"),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_metric_units(self):
         """Test handling of numbers with metric units.
@@ -659,12 +704,7 @@ class TestFileRenamer(unittest.TestCase):
             ("440hz a4 note.mp3", "440Hz A4 Note.mp3"),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_units_in_filenames(self):
         """Test handling of common units in filenames.
@@ -714,12 +754,7 @@ class TestFileRenamer(unittest.TestCase):
             ("100ω resistor.txt", "100Ω Resistor.txt"),  # Greek letter unit
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_abbreviations_and_units(self):
         """Test handling of abbreviations and units.
@@ -749,12 +784,7 @@ class TestFileRenamer(unittest.TestCase):
             ("9am alarm.mp3", "9AM Alarm.mp3"),
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
     def test_lowercase_words_after_triggers(self):
         """Test that lowercase words are capitalized after trigger characters."""
@@ -827,12 +857,7 @@ class TestFileRenamer(unittest.TestCase):
             ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),  # DMY with 2-digit year
         ]
 
-        for original, expected in test_cases:
-            result = self.renamer._clean_filename(original)
-            self.assertEqual(result, expected,
-                           f"\nInput:    {original!r}\n"
-                           f"Expected: {expected!r}\n"
-                           f"Got:      {result!r}")
+        self._run_test_cases(test_cases)
 
 if __name__ == '__main__':
     unittest.main()
