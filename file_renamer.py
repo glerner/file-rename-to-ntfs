@@ -56,31 +56,33 @@ class FileRenamer:
     # Multi-character replacements that are valid
     MULTI_CHAR_REPLACEMENTS = {
         '...', '<<', '>>', '[[', ']]', '{{', '}}',  # Special sequences
-        '1/2', '1/3', '2/3', '1/4', '3/4',          # Common fractions
-        '1/5', '2/5', '3/5', '4/5',
-        '1/6', '5/6',
-        '1/8', '3/8', '5/8', '7/8'
+        # Commented out fraction patterns - keeping for reference
+        # '1/2', '1/3', '2/3', '1/4', '3/4',          # Common fractions
+        # '1/5', '2/5', '3/5', '4/5',
+        # '1/6', '5/6',
+        # '1/8', '3/8', '5/8', '7/8'
     }
 
     # Character substitution mappings
     CHAR_REPLACEMENTS = {
         '\\': '⧵',  # Reverse Solidus Operator
         '/': '⧸',   # Big Solidus (for paths and non-fractions)
-        '1/2': '½', # Fraction One Half
-        '1/3': '⅓', # Fraction One Third
-        '2/3': '⅔', # Fraction Two Thirds
-        '1/4': '¼', # Fraction One Quarter
-        '3/4': '¾', # Fraction Three Quarters
-        '1/5': '⅕', # Fraction One Fifth
-        '2/5': '⅖', # Fraction Two Fifths
-        '3/5': '⅗', # Fraction Three Fifths
-        '4/5': '⅘', # Fraction Four Fifths
-        '1/6': '⅙', # Fraction One Sixth
-        '5/6': '⅚', # Fraction Five Sixths
-        '1/8': '⅛', # Fraction One Eighth
-        '3/8': '⅜', # Fraction Three Eighths
-        '5/8': '⅝', # Fraction Five Eighths
-        '7/8': '⅞', # Fraction Seven Eighths
+        # Commented out fraction mappings - keeping for reference
+        # '1/2': '½', # Fraction One Half
+        # '1/3': '⅓', # Fraction One Third
+        # '2/3': '⅔', # Fraction Two Thirds
+        # '1/4': '¼', # Fraction One Quarter
+        # '3/4': '¾', # Fraction Three Quarters
+        # '1/5': '⅕', # Fraction One Fifth
+        # '2/5': '⅖', # Fraction Two Fifths
+        # '3/5': '⅗', # Fraction Three Fifths
+        # '4/5': '⅘', # Fraction Four Fifths
+        # '1/6': '⅙', # Fraction One Sixth
+        # '5/6': '⅚', # Fraction Five Sixths
+        # '1/8': '⅛', # Fraction One Eighth
+        # '3/8': '⅜', # Fraction Three Eighths
+        # '5/8': '⅝', # Fraction Five Eighths
+        # '7/8': '⅞', # Fraction Seven Eighths
         ':': 'ː',   # Modifier Letter Triangular Colon
         '*': '✱',   # Heavy Asterisk
         '?': '⁇',   # Reversed Question Mark
@@ -200,12 +202,37 @@ class FileRenamer:
     }
 
     # Common abbreviations to preserve in uppercase
-    ABBREVIATIONS = {
-        # Academic Degrees
-        'BA', 'BS', 'BSC', 'MA', 'MBA', 'MD', 'M.D', 'PhD', 'Ph.D', 'JD', 'MS',
+    @classmethod
+    def _clean_abbreviation(cls, abbr: str) -> str:
+        """
+        Clean abbreviations for filename use:
+        1. Remove all periods (we want MD not M.D.)
+        2. Remove trailing whitespace
+        3. Store in standard form for case-insensitive matching
+        """
+        # Remove periods and whitespace
+        return re.sub(r'\.', '', abbr.strip())
 
-        # Movie/TV Ratings
-        'TV','G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
+    # Common abbreviations to preserve in uppercase
+    ABBREVIATIONS = {
+        # Academic Degrees (single-letter-per-part use periods)
+        'B.A', 'B.S', 'M.A', 'M.B.A', 'M.D', 'M.S', 'Ph.D', 'J.D',
+
+        # Professional Titles (multi-letter, no periods)
+        'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Rev',
+        'Hon',  # Honorable (Judge)
+        'Sr', 'Sra', 'Srta',  # Señor, Señora, Señorita
+
+        # Name Suffixes (no periods)
+        'Jr', 'Sr', 'II', 'III', 'IV',  # Note: V excluded as it conflicts with 'versus'
+
+        # Military Ranks (no periods)
+        'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
+        'Maj', 'Adm', 'Cmdr',  # More ranks
+        'USMC', 'USN', 'USAF', 'USA',  # Service branches
+
+        # Movie/TV Ratings (no periods)
+        'TV', 'G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
 
         # TV Networks
         'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS',
@@ -257,9 +284,9 @@ class FileRenamer:
         'QRO',  # Querétaro
         'QROO', # Quintana Roo
         'SLP',  # San Luis Potosí
-        'SIN',  # Sinaloa
-        'SON',  # Sonora
-        'TAB',  # Tabasco
+        # 'SIN',  # Sinaloa exclude, a word
+        # 'SON',  # Sonora exclude, a word
+        # 'TAB',  # Tabasco exclude, a word
         'TAMPS',# Tamaulipas
         'TLAX', # Tlaxcala
         'VER',  # Veracruz
@@ -285,7 +312,7 @@ class FileRenamer:
         # Audio
         'MP3', 'WAV', 'AAC', 'OGG', 'FLAC', 'WMA', 'M4A',
         # Quality/Standards
-        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD', 'fps', 'kHz', 'MHz', 'GHz',
+        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD', 'fps', 
 
         # Medical/Scientific
         'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
@@ -396,10 +423,10 @@ class FileRenamer:
         'over', 'past', 'to', 'up', 'upon', 'with',
 
         # Common Particles
-        'as', 'if', 'how', 'than', 'vs', 'vs.',
+        'as', 'if', 'how', 'than', 'v', 'vs', 'vs.',  # v/vs/vs. for versus
 
         # Common Words in Media Titles
-        'part', 'vol', 'vs', 'feat', 'ft', 'remix',
+        'part', 'vol', 'feat', 'ft', 'remix',
 
         # Be Verbs (when not first/last)
         'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
@@ -446,28 +473,16 @@ class FileRenamer:
                     "All characters must be valid UTF-16."
                 )
 
-    # Common words that should not be capitalized in titles
-    LOWERCASE_WORDS = {
-        # Articles
-        'a', 'an', 'the',
-
-        # Coordinating Conjunctions
-        'and', 'but', 'for', 'nor', 'or', 'so', 'yet',
-
-        # Short Prepositions (under 5 letters)
-        'at', 'by', 'down', 'for', 'from', 'in', 'into',
-        'like', 'near', 'of', 'off', 'on', 'onto', 'out',
-        'over', 'past', 'to', 'up', 'upon', 'with',
-
-        # Common Particles
-        'as', 'if', 'how', 'than', 'vs', 'vs.',
-
-        # Common Words in Media Titles
-        'part', 'vol', 'vs', 'feat', 'ft', 'remix',
-
-        # Be Verbs (when not first/last)
-        'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
-    }
+    @classmethod
+    def _validate_abbreviations(cls):
+        """
+        Validate and clean the ABBREVIATIONS set according to our rules.
+        Modifies ABBREVIATIONS in place.
+        """
+        cleaned = set()
+        for abbr in cls.ABBREVIATIONS:
+            cleaned.add(cls._clean_abbreviation(abbr))
+        cls.ABBREVIATIONS = cleaned
 
     def __init__(self, directory: str = '.', dry_run: bool = False):
         """
@@ -477,6 +492,9 @@ class FileRenamer:
             directory (str): Directory to process files in
             dry_run (bool): If True, only show what would be renamed without making changes
         """
+        # Validate and clean abbreviations first
+        self._validate_abbreviations()
+
         self.directory = Path(directory)
         self.dry_run = dry_run
 
@@ -585,14 +603,20 @@ class FileRenamer:
 
         # Replace special characters
         self.debug_print(f"Before special char replacement: {name!r}")
+
+        # Handle fractions (digit/digit with optional spaces)
+        name = re.sub(r'(\d)\s*/\s*(\d)', r'\1⧸\2', name)
+
+        # Handle other special characters
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
             if original_char == '...':
                 # Handle ellipsis separately to avoid over-replacement
                 self.debug_print(f"Before ellipsis replacement:    {name!r}")
                 name = re.sub(r'\.{3,}', replacement_char, name)
                 self.debug_print(f"After ellipsis replacement:     {name!r}")
-            else:
+            elif original_char != '/':
                 # Replace multiple occurrences with single replacement
+                # Skip the regular slash replacement since we handle it specially for fractions
                 name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
         self.debug_print(f"After special char replacement:  {name!r}\n")
 
@@ -640,7 +664,7 @@ class FileRenamer:
                     last_real_word = part.lower()
 
             # Now process each part
-            for part in parts:
+            for i, part in enumerate(parts):
                 if not part:  # Skip empty parts
                     continue
 
@@ -651,6 +675,19 @@ class FileRenamer:
                 self.debug_print(f"Previous part: {prev_part!r}")
                 self.debug_print(f"Is contraction: {word in self.CONTRACTIONS}")
                 self.debug_print(f"Titled parts so far: {titled_parts}")
+
+                # Handle numbers followed by words (e.g., "10web" -> "10Web")
+                # But don't handle units or time (e.g., "5minutes", "9am")
+                number_word_match = re.match(r'^(\d+)([a-z]+)$', word)
+                if (number_word_match and
+                    not re.match(r'^\d+(?:k?m|k?b|[kmgt]?hz|[ap]m|min)s?$', word.lower())):
+                    self.debug_print(f"Found number-word pattern: {word!r}")
+                    number, text = number_word_match.groups()
+                    word = f"{number}{text.capitalize()}"
+                    self.debug_print(f"After number-word handling: {word!r}")
+                    titled_parts.append(word)
+                    prev_part = part
+                    continue
 
                 # Skip empty parts
                 if not word:
@@ -664,7 +701,7 @@ class FileRenamer:
                     continue
 
                 # Special case: AM/PM after numbers (including when joined like "9am")
-                if re.match(r'\d+[ap]m', word, re.IGNORECASE):
+                if re.match(r'\d+[ap]m\b', word, re.IGNORECASE):
                     self.debug_print(f"Found time with AM/PM: {word!r}")
                     num = re.search(r'\d+', word, re.IGNORECASE).group()
                     ampm = word[len(num):].upper()
@@ -687,18 +724,93 @@ class FileRenamer:
                 # Handle common unit patterns (GB, MHz, etc.)
                 found_unit = False
                 word_lower = word.lower()
-                for pattern, formatter in self.UNIT_PATTERNS.items():
-                    if re.match(pattern, word_lower):
-                        self.debug_print(f"Found unit pattern: {word!r}")
-                        titled_parts.append(formatter(word_lower))
-                        prev_part = part
-                        found_unit = True
-                        break
+
+                # Only try unit patterns if the word looks like it could be a unit
+                # (starts with number and is followed by known unit characters)
+                self.debug_print(f"Checking for unit pattern in: {word_lower!r}")
+                if re.match(r'^\d+[kmgtw]?[wvajnlhzbf]', word_lower):
+                    self.debug_print(f"  Potential unit pattern found")
+                    for pattern, formatter in sorted(self.UNIT_PATTERNS.items(), key=lambda x: len(x[0]), reverse=True):
+                        if re.match(f'^{pattern}$', word_lower, re.IGNORECASE):  # Case-insensitive exact match
+                            self.debug_print(f"  Found exact unit pattern: {pattern!r}")
+                            titled_parts.append(formatter(word_lower))
+                            prev_part = part
+                            found_unit = True
+                            break
+                    if not found_unit:
+                        self.debug_print(f"  No exact unit pattern match found")
 
                 if found_unit:
                     continue
 
-                # Check if this is a contraction
+                # Handle abbreviations with the following steps:
+                # 1. If at end of text, try adding period when testing against ABBREVIATIONS
+                # 2. Check if word is in ABBREVIATIONS set as-is
+                # 3. Check if word is in ABBREVIATIONS set without periods
+                # 4. If found, preserve the format from ABBREVIATIONS set
+
+                # Build the word to test, handling period-separated parts
+                test_word = word
+                j = i
+                if i + 1 < len(parts) and parts[i+1].strip() == '.':
+                    word_parts = [word]
+                    j = i + 1
+                    while j < len(parts) - 1 and parts[j].strip() == '.':
+                        next_part = parts[j+1].strip()
+                        if not next_part:  # Skip empty parts
+                            j += 1
+                            continue
+                        word_parts.extend(['.', next_part])
+                        j += 2
+                    test_word = ''.join(word_parts)
+
+                # Step 1: If at end of text, try with trailing period
+                is_end_of_text = j >= len(parts) - 1
+                test_variants = [test_word.upper()]
+                if is_end_of_text:
+                    test_variants.insert(0, test_word.upper() + '.')
+                self.debug_print(f"Testing for abbreviation: {test_word!r}")
+                self.debug_print(f"Is end of text: {is_end_of_text}")
+                self.debug_print(f"Test variants: {test_variants}")
+
+                # Step 2 & 3: Check variants against ABBREVIATIONS
+                found_abbrev = None
+                for test_variant in test_variants:
+                    # Try exact match
+                    self.debug_print(f"  Trying exact match: {test_variant!r}")
+                    if test_variant in self.ABBREVIATIONS:
+                        found_abbrev = test_variant
+                        self.debug_print(f"    Found exact match: {found_abbrev!r}")
+                        break
+                    # Try without periods
+                    no_periods = re.sub(r'\.', '', test_variant)
+                    self.debug_print(f"  Testing for abbreviation: {test_word!r}")
+                    self.debug_print(f"  Is end of text: {is_end_of_text}")
+                    self.debug_print(f"  Test variants: {test_variants}")
+                    for abbr in self.ABBREVIATIONS:
+                        abbr_no_periods = re.sub(r'\.', '', abbr)
+                        if no_periods.upper() == abbr_no_periods.upper():
+                            found_abbrev = abbr
+                            self.debug_print(f"    Found match: {abbr!r}")
+                            break
+                    if found_abbrev:
+                        break
+                if not found_abbrev:
+                    self.debug_print("  No abbreviation match found")
+                else:
+                    # Handle found abbreviation
+                    if '.' in found_abbrev:
+                        # Split into parts to preserve periods
+                        parts_to_add = re.split(r'([.])', found_abbrev)
+                        titled_parts.extend(parts_to_add)
+                        prev_part = '.'  # Last character will be a period
+                    else:
+                        titled_parts.append(found_abbrev)
+                        prev_part = found_abbrev[-1]
+                    i = j
+                    continue
+
+                # Finally check for contractions
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
                     self.debug_print(f"\nFound contraction: {word!r}")
                     self.debug_print(f"Previous part: {prev_part!r}")
@@ -710,20 +822,6 @@ class FileRenamer:
                         prev_part = part
                         continue
                     self.debug_print(f"Not treating as contraction - not after word + apostrophe\n")
-
-                # Check if it's an abbreviation first
-                found_abbr = False
-                word_upper = word.upper()
-                for abbr in self.ABBREVIATIONS:
-                    if word_upper == abbr.upper():
-                        self.debug_print(f"Found abbreviation: {word!r} -> {abbr}")
-                        titled_parts.append(abbr)
-                        prev_part = part
-                        found_abbr = True
-                        break
-
-                if found_abbr:
-                    continue
 
                 # Check if we're between spaces or after punctuation
                 # Word should be lowercase if:
@@ -757,8 +855,33 @@ class FileRenamer:
                     titled_parts.append(word.capitalize())
                 prev_part = part
 
-            # Join the parts back together
+            # Join parts and normalize periods
             name = ''.join(titled_parts)
+
+            # First pass: look for and protect known abbreviations
+            def handle_periods(match):
+                full_str = name  # Capture the full string for context
+                pos = match.start()
+                before_char = full_str[pos-1] if pos > 0 else ''
+                after_char = match.group(1)  # The letter after the period
+
+                # Look ahead for potential abbreviation pattern (e.g., M.D)
+                next_period_pos = full_str.find('.', pos + 1)
+                if next_period_pos != -1 and next_period_pos - pos <= 2:
+                    potential_abbrev = (before_char + '.' + after_char).upper()
+                    if potential_abbrev in self.ABBREVIATIONS:
+                        return f'.{after_char.upper()}'
+
+                # Check other cases
+                if before_char.isdigit() or after_char.upper() in self.ABBREVIATIONS:
+                    return f'.{after_char}'
+
+                # Not an abbreviation, add space
+                return f'. {after_char}'
+
+            name = re.sub(r'\.([a-zA-Z])', handle_periods, name)
+            # Clean up any double spaces
+            name = re.sub(r'\s+', ' ', name)
 
             # Do one final check for trailing special characters
             name = self._clean_trailing_chars(name)

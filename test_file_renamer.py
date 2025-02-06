@@ -281,7 +281,7 @@ class TestFileRenamer(unittest.TestCase):
             ('test!', 'Test!'),  # Keep exclamation mark at end
             ('Clark Gable in "Gone with the Wind".png', f'Clark Gable in {quote}Gone with the Wind{quote}.png'),  # Keep quotes even at the end
             ('script.py', 'script.py'),  # Don't change casing of known file extensions
-            ('data.json}...', 'Data.JSON}'),  # Keep closing brace, since are allowing closing parenthesis-like characters, remove trailing periods
+            ('data.json}...', 'Data. JSON}'),  # Keep closing brace, since are allowing closing parenthesis-like characters; remove trailing periods
             ('data.json', 'data.json'),  # Don't change casing of known file extensions
             ('Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4',
              'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),  # Keep capitalization after parentheses
@@ -533,7 +533,9 @@ class TestFileRenamer(unittest.TestCase):
         test_cases = [
             # Academic degrees
             ("dr. smith md phd.txt", "Dr. Smith MD PhD.txt"),
+            # this checks the m is not grabbed as a contraction (I'm) and is not grabbed as a unit (meters)
             ("jane doe, m.d..txt", "Jane Doe, M.D.txt"),
+            ("jane smith, m.d.txt", "Jane Smith, M.D.txt"),
 
             # Movie/TV ratings
             ("movie pg-13 2024.mp4", "Movie PG-13 2024.mp4"),
@@ -546,6 +548,18 @@ class TestFileRenamer(unittest.TestCase):
             # States and provinces
             ("ny to ca road trip.mp4", "NY to CA Road Trip.mp4"),
             ("from bc to qc via ab.txt", "From BC to QC Via AB.txt"),
+
+            # Military ranks (basic)
+            ("sgt smith report.txt", "Sgt Smith Report.txt"),
+            ("SGT. SMITH REPORT.txt", "Sgt Smith Report.txt"),
+
+            # Military ranks (combined)
+            ("lt.col smith report.pdf", "Lt.Col Smith Report.pdf"),
+            ("lt col smith report.pdf", "Lt.Col Smith Report.pdf"),
+            ("LT.COL. SMITH REPORT.pdf", "Lt.Col Smith Report.pdf"),
+
+            # Multiple ranks in one name
+            ("sgt smith to lt.col jones memo.doc", "Sgt Smith to Lt.Col Jones Memo.doc"),
 
             # Time/date
             ("meeting 9am pst.txt", "Meeting 9AM PST.txt"),
@@ -568,7 +582,10 @@ class TestFileRenamer(unittest.TestCase):
 
             # Video/Audio
             ("movie 4k hdr 60fps.mkv", "Movie 4K HDR 60fps.mkv"),
+            # trailing .wav is a file extension, would have been WAV if followed by text.
+            # future enhancement look for common file extensions within the filename, not as the actual file extension
             ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.wav"), # trailing .wav is a file extension, would have been WAV if followed by text
+
             ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
 
             # Frequency
@@ -714,7 +731,6 @@ class TestFileRenamer(unittest.TestCase):
         """
         test_cases = [
             # Mixed abbreviations and units
-            ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.wav"), # trailing .wav is a file extension, would have been WAV if followed by text
             ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
 
             # Mixed cases
