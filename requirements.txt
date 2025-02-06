@@ -1,2 +1,5 @@
 pytest==7.4.3
 pytest-cov==4.1.0
+
+# Optional: for colored debug output
+colorama>=0.4.4

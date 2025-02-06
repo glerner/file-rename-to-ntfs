@@ -32,11 +32,40 @@ class TestFileRenamer(unittest.TestCase):
                 # Temporarily add FAIL prefix to force failures
                 original = 'FAIL ' + original
             try:
+                # Try to import colorama for colored output
+                try:
+                    from colorama import Fore, Style
+                    has_color = True
+                except ImportError:
+                    has_color = False
+
+                def highlight_special_chars(text):
+                    if not has_color:
+                        return repr(text)
+                    # Get the special chars from FileRenamer
+                    special_chars = set(FileRenamer.CHAR_REPLACEMENTS.values())
+                    result = []
+                    text_repr = repr(text)[1:-1]  # Remove the quotes
+                    i = 0
+                    while i < len(text_repr):
+                        if text_repr[i:i+2] == '\\u':
+                            # Skip escaped unicode
+                            result.append(text_repr[i:i+6])
+                            i += 6
+                            continue
+                        char = text_repr[i]
+                        if char in special_chars:
+                            result.append(f"{Fore.CYAN}{char}{Style.RESET_ALL}")
+                        else:
+                            result.append(char)
+                        i += 1
+                    return f"'{(''.join(result))}'"  # Add back the quotes
+
                 result = self.renamer._clean_filename(original)
                 print(f"\n==================================================\n")
                 print(f"Finished processing: {original!r}")
-                print(f"Result:   {result!r}")
-                print(f"Expected: {expected!r}")
+                print(f"Result:   {highlight_special_chars(result)}")
+                print(f"Expected: {highlight_special_chars(expected)}")
                 print(f"{'='*50}\n")
 
                 if result != expected:
@@ -60,8 +89,8 @@ class TestFileRenamer(unittest.TestCase):
                 if 'error' in failure:
                     print(f"  Error:    {failure['error']}")
                 else:
-                    print(f"  Expected: {failure['expected']!r}")
-                    print(f"  Got:      {failure['got']!r}")
+                    print(f"  Expected: {highlight_special_chars(failure['expected'])}")
+                    print(f"  Got:      {highlight_special_chars(failure['got'])}")
                 print()
 
             # Fail the test with a summary
@@ -373,10 +402,10 @@ class TestFileRenamer(unittest.TestCase):
 
     def test_file_operations(self):
         """Test actual file operations.
-        
+
         Creates test files with ASCII special characters (like '?') and verifies they
         are correctly renamed to use the Unicode replacements from CHAR_REPLACEMENTS.
-        
+
         Note: Some filesystems may not allow certain ASCII special characters in filenames.
         In such cases, we should detect this and report it, then proceed with the Unicode
         replacement character anyway since that's our goal.
@@ -421,7 +450,7 @@ class TestFileRenamer(unittest.TestCase):
 
     def test_command_line(self):
         """Test command line interface.
-        
+
         Tests the command line processing of files containing ASCII special characters
         (like '?') and verifies they are correctly renamed to use the Unicode
         replacements from CHAR_REPLACEMENTS.

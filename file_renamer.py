@@ -28,6 +28,10 @@ from typing import Dict, List, Tuple
 from pathlib import Path
 import unicodedata
 import logging
+from colorama import init, Fore, Style
+
+# Initialize colorama for cross-platform color support
+init()
 
 def get_debug_level() -> str:
     """
@@ -103,6 +107,9 @@ class FileRenamer:
         '!': '!',   # Keep exclamation mark but collapse multiples
         '...': '…',  # Replace three or more periods with ellipsis character
     }
+
+    # Shorthand for readability
+    R = CHAR_REPLACEMENTS
 
     # All opening bracket characters (ASCII and replacements)
     OPENING_BRACKETS = {
@@ -436,6 +443,16 @@ class FileRenamer:
         'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
     }
 
+    # Characters that trigger capitalization of the next word
+    CAPITALIZATION_TRIGGERS = {
+        '.',  # Period
+        '-',  # Dash/Hyphen
+        R['...'],  # Ellipsis
+        R[':'],    # Colon
+        R['|'],    # Pipe/Vertical bar
+        *OPENING_BRACKETS  # All opening brackets
+    }
+
     # Debug mode flag
     _debug_level = get_debug_level()
     _debug = False  # Initialize debug flag for command line use
@@ -618,6 +635,10 @@ class FileRenamer:
         # Replace special characters
         self.debug_print(f"Before replacements: {name!r}", level='normal')
 
+        # Function to colorize replacement chars
+        def colorize(char):
+            return f"{Fore.CYAN}{char}{Style.RESET_ALL}"
+
         # Handle fractions first (digit/digit with optional spaces)
         name = re.sub(r'(\d)\s*/\s*(\d)', fr'\1{R["/"]}\2', name)
 
@@ -625,7 +646,7 @@ class FileRenamer:
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
             if len(original_char) > 1:  # Multi-char replacement
                 if original_char in name:
-                    self.debug_print(f"  Multi-char: {original_char!r} -> {replacement_char!r}", level='detail')
+                    self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
                     if original_char == '...':
                         # Handle ellipsis specially to match 3 or more dots
                         name = re.sub(r'\.{3,}', replacement_char, name)
@@ -636,10 +657,19 @@ class FileRenamer:
         for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
             if len(original_char) == 1:  # Single-char replacements
                 if original_char in name:
-                    self.debug_print(f"  Single-char: {original_char!r} -> {replacement_char!r}", level='detail')
+                    self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
                     name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
 
-        self.debug_print(f"After replacements: {name!r}", level='normal')
+        # Show replaced characters in color in the final output
+        colored_parts = []
+        for c in name:
+            if any(c == repl for repl in R.values()):
+                colored_parts.append(colorize(c))
+            else:
+                colored_parts.append(c)
+        colored_name = ''.join(colored_parts)
+        # Don't use !r here as it escapes the color codes
+        self.debug_print(f"After replacements: '{colored_name}'", level='normal')
 
         # Clean up whitespace
         name = name.strip()
@@ -705,10 +735,7 @@ class FileRenamer:
                 # Convert to title case, handling special cases
                 word = part.lower()  # First convert to lowercase
 
-                self.debug_print(f"\nProcessing word: {word!r}")
-                self.debug_print(f"Previous part: {prev_part!r}")
-                self.debug_print(f"Is contraction: {word in self.CONTRACTIONS}")
-                self.debug_print(f"Titled parts so far: {titled_parts}")
+                self.debug_print(f"\n⮑ Word: {word!r} (prev={prev_part!r}, contraction={word in self.CONTRACTIONS})")
 
                 # Handle numbers followed by words (e.g., "10web" -> "10Web")
                 # But don't handle units or time (e.g., "5minutes", "9am")
@@ -761,12 +788,11 @@ class FileRenamer:
 
                 # Only try unit patterns if the word looks like it could be a unit
                 # (starts with number and is followed by known unit characters)
-                self.debug_print(f"Checking for unit pattern in: {word_lower!r}")
                 if re.match(r'^\d+[kmgtw]?[wvajnlhzbf]', word_lower):
-                    self.debug_print(f"  Potential unit pattern found")
+                    self.debug_print(f"  Unit check: {word_lower!r}")
                     for pattern, formatter in sorted(self.UNIT_PATTERNS.items(), key=lambda x: len(x[0]), reverse=True):
                         if re.match(f'^{pattern}$', word_lower, re.IGNORECASE):  # Case-insensitive exact match
-                            self.debug_print(f"  Found exact unit pattern: {pattern!r}")
+                            self.debug_print(f"  ✓ Unit: {formatter(word_lower)!r} (pattern={pattern!r})")
                             titled_parts.append(formatter(word_lower))
                             prev_part = part
                             found_unit = True
@@ -803,29 +829,24 @@ class FileRenamer:
                 test_variants = [test_word.upper()]
                 if is_end_of_text:
                     test_variants.insert(0, test_word.upper() + '.')
-                self.debug_print(f"Testing for abbreviation: {test_word!r}")
-                self.debug_print(f"Is end of text: {is_end_of_text}")
-                self.debug_print(f"Test variants: {test_variants}")
+                self.debug_print(f"  Abbrev check: {test_word!r} (end={is_end_of_text}, variants={test_variants})")
 
                 # Step 2 & 3: Check variants against ABBREVIATIONS
                 found_abbrev = None
                 for test_variant in test_variants:
                     # Try exact match
-                    self.debug_print(f"  Trying exact match: {test_variant!r}")
                     if test_variant in self.ABBREVIATIONS:
                         found_abbrev = test_variant
-                        self.debug_print(f"    Found exact match: {found_abbrev!r}")
+                        self.debug_print(f"    ✓ Abbrev: {found_abbrev!r} (exact)")
                         break
                     # Try without periods
                     no_periods = re.sub(r'\.', '', test_variant)
-                    self.debug_print(f"  Testing for abbreviation: {test_word!r}")
-                    self.debug_print(f"  Is end of text: {is_end_of_text}")
-                    self.debug_print(f"  Test variants: {test_variants}")
+
                     for abbr in self.ABBREVIATIONS:
                         abbr_no_periods = re.sub(r'\.', '', abbr)
                         if no_periods.upper() == abbr_no_periods.upper():
                             found_abbrev = abbr
-                            self.debug_print(f"    Found match: {abbr!r}")
+                            self.debug_print(f"    ✓ Abbrev: {abbr!r} (no periods)")
                             break
                     if found_abbrev:
                         break
@@ -834,7 +855,7 @@ class FileRenamer:
                 else:
                     # Handle found abbreviation
                     original_parts = parts[i:j+1]
-                    abbrev_debug = f"[ABBREV] {found_abbrev!r} from {original_parts!r}"
+                    abbrev_debug = f"✓ {found_abbrev!r} (from={original_parts!r})"
 
                     # Mark all parts that make up this abbreviation as processed
                     for idx in range(i, j+1):
@@ -854,16 +875,18 @@ class FileRenamer:
 
                 # Finally check for contractions
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
-                    self.debug_print(f"\nFound contraction: {word!r}")
-                    self.debug_print(f"Previous part: {prev_part!r}")
-                    self.debug_print(f"Previous parts: {titled_parts[-2:]!r}")
+                    # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
+                    base_word = titled_parts[-2] if len(titled_parts) >= 2 else ''
+                    full_contraction = f"{base_word}'{word}" if prev_part == "'" and not titled_parts[-2].isspace() else None
+                    
+                    self.debug_print(f"  Contraction check: {word!r} (base={base_word!r})")
                     # Check if it follows a word + apostrophe (not space + apostrophe)
-                    if prev_part == "'" and not titled_parts[-2].isspace():
-                        self.debug_print(f"Keeping as contraction\n")
+                    if full_contraction:
+                        self.debug_print(f"    ✓ Accepted: {full_contraction!r}")
                         titled_parts.append(word)
-                        prev_part = part
+                        prev_part = full_contraction  # Store the full contraction as prev_part
                         continue
-                    self.debug_print(f"Not treating as contraction - not after word + apostrophe\n")
+                    self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
 
                 # Check if we're between spaces or after punctuation
                 # Word should be lowercase if:
@@ -875,25 +898,42 @@ class FileRenamer:
 
                 is_between_spaces = prev_part == ' '
 
-                # Always capitalize after a period/ellipsis or if it's the first/last word
+                # Find the last non-space part for checking capitalization triggers
+                last_non_space = next((p for p in reversed(titled_parts) if p.strip()), '') if titled_parts else ''
+
+                # Always capitalize after certain punctuation or if it's the first/last word
                 should_capitalize = (
                     not titled_parts or  # First word
-                    prev_part in {'.', self.CHAR_REPLACEMENTS['...']} or  # After period or ellipsis
-                    prev_part in self.OPENING_BRACKETS or  # After any opening bracket
+                    last_non_space in self.CAPITALIZATION_TRIGGERS or  # After trigger characters
                     word == last_real_word  # Last word
                 )
-                self.debug_print(f"Should capitalize:    {should_capitalize}")
-                if should_capitalize:
-                    self.debug_print(f"  Reason: {'First word' if not titled_parts else 'Last word' if word == last_real_word else 'After period/ellipsis' if prev_part in {'.', self.CHAR_REPLACEMENTS['...']} else 'After opening bracket'}")
+                # First check if we should force capitalize
+                reason = ('First word' if not titled_parts else
+                         'Last word' if word == last_real_word else
+                         'After punctuation' if last_non_space in self.CAPITALIZATION_TRIGGERS else
+                         'Between special chars' if not is_between_spaces else
+                         'Unknown')
+
+                # Then check if we should force lowercase
+                should_lowercase = (word in self.LOWERCASE_WORDS and
+                                  titled_parts and  # Not first word
+                                  not should_capitalize and  # Not after period/ellipsis
+                                  word != last_real_word and  # Not the last word
+                                  is_between_spaces)  # Between spaces, not after special char
+
+                case_reason = f"capitalize ({reason})" if should_capitalize else \
+                             f"lowercase (in list)" if should_lowercase else \
+                             f"capitalize (not in lowercase list)"
+                self.debug_print(f"  Case: {case_reason}")
                 if (word in self.LOWERCASE_WORDS and
                     titled_parts and      # Not first word
                     not should_capitalize and  # Not after period/ellipsis
                     word != last_real_word and  # Not the last word
                     is_between_spaces):   # Between spaces, not after special char
-                    self.debug_print(f"Should be lowercase: True")
+    
                     titled_parts.append(word)
                 else:
-                    self.debug_print(f"Should be lowercase: False")
+    
                     titled_parts.append(word.capitalize())
                 prev_part = part
 

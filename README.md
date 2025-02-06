@@ -25,6 +25,12 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
    ```bash
    pip install -r requirements.txt
    ```
+3. Optional: Install colorama for colored debug output:
+   ```bash
+   pip install colorama
+   ```
+   When colorama is installed, special character replacements will be highlighted in cyan in the debug output,
+   making it easier to spot where characters have been replaced.
 
 ## Usage
 
