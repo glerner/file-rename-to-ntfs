@@ -312,7 +312,7 @@ class FileRenamer:
         # Audio
         'MP3', 'WAV', 'AAC', 'OGG', 'FLAC', 'WMA', 'M4A',
         # Quality/Standards
-        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD', 'fps', 
+        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD', 'fps',
 
         # Medical/Scientific
         'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
@@ -653,7 +653,14 @@ class FileRenamer:
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
             self.debug_print(f"\nSplit pattern: {split_pattern}")
-            parts = re.split(split_pattern, name)
+
+            # First do a quick validation of how many parts we might get
+            test_parts = re.split(split_pattern, name)
+            if len(test_parts) > 200:  # Very generous limit, normal files have 30-90 parts
+                self.debug_print(f"Filename too complex: {len(test_parts)} parts exceeds limit of 200")
+                return name  # Return original name if too complex
+
+            parts = test_parts
             self.debug_print(f"Parts after split: {parts!r}\n")
 
             titled_parts = []
@@ -663,8 +670,14 @@ class FileRenamer:
                 if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
                     last_real_word = part.lower()
 
+            # Track which parts we've processed and why
+            processed_parts = {}
+            
             # Now process each part
             for i, part in enumerate(parts):
+                if i in processed_parts:
+                    self.debug_print(f"\n[SKIP] Part {i}: {part!r} ({processed_parts[i]})")
+                    continue
                 if not part:  # Skip empty parts
                     continue
 
@@ -799,15 +812,23 @@ class FileRenamer:
                     self.debug_print("  No abbreviation match found")
                 else:
                     # Handle found abbreviation
+                    original_parts = parts[i:j+1]
+                    abbrev_debug = f"[ABBREV] {found_abbrev!r} from {original_parts!r}"
+                    
+                    # Mark all parts that make up this abbreviation as processed
+                    for idx in range(i, j+1):
+                        processed_parts[idx] = f"part of {abbrev_debug}"
+                    
                     if '.' in found_abbrev:
                         # Split into parts to preserve periods
                         parts_to_add = re.split(r'([.])', found_abbrev)
                         titled_parts.extend(parts_to_add)
-                        prev_part = '.'  # Last character will be a period
+                        prev_part = found_abbrev  # Keep the full abbreviation as previous part
                     else:
                         titled_parts.append(found_abbrev)
-                        prev_part = found_abbrev[-1]
-                    i = j
+                        prev_part = found_abbrev  # Keep the full abbreviation as previous part
+                    
+                    self.debug_print(abbrev_debug)
                     continue
 
                 # Finally check for contractions
@@ -895,9 +916,9 @@ class FileRenamer:
 
         # Always use lowercase for extensions, whether known or unknown
         if extension:
-            result = f"{name}.{extension.lower()}"
+            result = f"===={name}.{extension.lower()}"
         else:
-            result = name
+            result = f"===={name}"
 
         self.debug_print(f"\n{'='*50}")
         self.debug_print(f"Finished processing: {filename!r}")
