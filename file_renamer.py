@@ -237,6 +237,7 @@ class FileRenamer:
 
         # Military Ranks (no periods)
         'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
+        'Lt.Col', 'Lt.Gen', 'Maj.Gen', 'Brig.Gen',  # Compound ranks
         'Maj', 'Adm', 'Cmdr',  # More ranks
         'USMC', 'USN', 'USAF', 'USA',  # Service branches
 
@@ -351,10 +352,20 @@ class FileRenamer:
     # Common units in filenames that need specific capitalization
     R = CHAR_REPLACEMENTS  # Shorthand for readability
     UNIT_PATTERNS = {
-        # Storage (k lowercase, M/G/T uppercase + B)
-        r'\d+kb': lambda s: f"{s[:-2]}kB",  # 5kb -> 5kB
-        r'\d+KB': lambda s: f"{s[:-2]}kB",  # 5KB -> 5kB
-        r'\d+[mgt]b': lambda s: f"{s[:-2]}{s[-2].upper()}B",  # 5mb -> 5MB
+        # Weight units (no space, preserve case)
+        r'\d+mg\b': lambda s: f"{s}",  # 5mg -> 5mg
+        r'\d+g\b': lambda s: f"{s}",   # 5g -> 5g
+        r'\d+kg\b': lambda s: f"{s}",  # 5kg -> 5kg
+
+        # Data units (preserve original case)
+        r'\d+kb\b': lambda s: f"{s}",  # 5kb -> 5kb
+        r'\d+KB\b': lambda s: f"{s}",  # 5KB -> 5KB
+        r'\d+[mgt]b\b': lambda s: f"{s}",  # Keep original case
+        r'\d+[MGT]B\b': lambda s: f"{s}",  # Keep original case
+
+        # Network speed (preserve case)
+        r'\d+kbps\b': lambda s: f"{s}",  # 5kbps -> 5kbps
+        r'\d+[mgt]bps\b': lambda s: f"{s}",  # 5mbps -> 5mbps
 
         # Frequency (k lowercase, M/G/T uppercase + Hz)
         r'\d+hz\b': lambda s: f"{s[:-2]}Hz",  # 100hz -> 100Hz
@@ -737,18 +748,7 @@ class FileRenamer:
 
                 self.debug_print(f"\n⮑ Word: {word!r} (prev={prev_part!r}, contraction={word in self.CONTRACTIONS})")
 
-                # Handle numbers followed by words (e.g., "10web" -> "10Web")
-                # But don't handle units or time (e.g., "5minutes", "9am")
-                number_word_match = re.match(r'^(\d+)([a-z]+)$', word)
-                if (number_word_match and
-                    not re.match(r'^\d+(?:k?m|k?b|[kmgt]?hz|[ap]m|min)s?$', word.lower())):
-                    self.debug_print(f"Found number-word pattern: {word!r}")
-                    number, text = number_word_match.groups()
-                    word = f"{number}{text.capitalize()}"
-                    self.debug_print(f"After number-word handling: {word!r}")
-                    titled_parts.append(word)
-                    prev_part = part
-                    continue
+
 
                 # Skip empty parts
                 if not word:
@@ -789,16 +789,119 @@ class FileRenamer:
                 # Only try unit patterns if the word looks like it could be a unit
                 # (starts with number and is followed by known unit characters)
                 if re.match(r'^\d+[kmgtw]?[wvajnlhzbf]', word_lower):
-                    self.debug_print(f"  Unit check: {word_lower!r}")
+                    self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
+                    self.debug_print(f"  Context: parts[{i}] in {parts!r}")
+
+                    # Initialize unit tracking
+                    j = i  # Current position
+                    unit_parts = [part]  # Track all parts of the unit
+                    test_word = word_lower
+                    original_parts = [part]
+
+                    # Check for space-separated units (e.g. "5 kb" or "5 g")
+                    if i + 2 < len(parts) and parts[i+1].strip() == ' ':
+                        next_part = parts[i+2].strip().lower()
+                        if re.match(r'^[kmgtw]?[wvajnlhzbf]', next_part):
+                            # Include space and unit part
+                            unit_parts.extend([parts[i+1], parts[i+2]])
+                            original_parts.extend([parts[i+1], parts[i+2]])
+                            test_word = word_lower + next_part
+                            j = i + 2
+                            self.debug_print(f"  Found space-separated unit: {unit_parts!r}")
+
+                            # Check for additional parts (like /hr in speed units)
+                            if j + 2 < len(parts) and parts[j+1] in ['/', '⧸']:
+                                speed_suffix = parts[j+2].lower()
+                                if speed_suffix in ['h', 'hr', 'hour', 'hours']:
+                                    unit_parts.extend([parts[j+1], parts[j+2]])
+                                    original_parts.extend([parts[j+1], parts[j+2]])
+                                    test_word += parts[j+1] + speed_suffix
+                                    j = j + 2
+                                    self.debug_print(f"  Found speed unit: {unit_parts!r}")
+
+                    self.debug_print(f"  Testing unit pattern: {test_word!r}")
+                    self.debug_print(f"  Original parts: {original_parts!r}")
+
+                    # Try to match unit patterns
                     for pattern, formatter in sorted(self.UNIT_PATTERNS.items(), key=lambda x: len(x[0]), reverse=True):
-                        if re.match(f'^{pattern}$', word_lower, re.IGNORECASE):  # Case-insensitive exact match
-                            self.debug_print(f"  ✓ Unit: {formatter(word_lower)!r} (pattern={pattern!r})")
-                            titled_parts.append(formatter(word_lower))
-                            prev_part = part
+                        match = re.match(f'^{pattern}$', test_word, re.IGNORECASE)
+                        if match:  # Case-insensitive exact match
+                            # For bits/bytes and bps units, enforce prefix case but preserve b/B
+                            if re.search(r'\d+[kmgt]?b(?:ps)?\b', test_word, re.IGNORECASE):
+                                # Find the unit part (kb, MB, bps, Bps etc)
+                                unit_match = re.search(r'[kmgt]?b(?:ps)?\b', test_word, re.IGNORECASE)
+                                if unit_match:
+                                    # Get original case for just the b/B part
+                                    orig_b_case = None
+                                    for p in original_parts:
+                                        if unit_match.group().lower() in p.lower():
+                                            # Match the b/B and optional ps
+                                            b_pattern = r'[bB](?:[pP][sS])?\b'
+                                            b_search = re.search(b_pattern, p)
+                                            if b_search:
+                                                orig_b_case = b_search.group()
+                                                break
+
+                                    if orig_b_case:
+                                        # Extract the prefix and number
+                                        prefix_match = re.match(r'(\d+)([kmgt])?', test_word, re.IGNORECASE)
+                                        if prefix_match:
+                                            number = prefix_match.group(1)
+                                            prefix = prefix_match.group(2)
+
+                                            # Apply prefix case rules
+                                            if prefix:
+                                                if prefix.lower() == 'k':
+                                                    prefix = 'k'  # Always lowercase
+                                                else:
+                                                    prefix = prefix.upper()  # M, G, T always uppercase
+
+                                            # Combine with preserved b/B case
+                                            formatted = f"{number}{prefix or ''}{orig_b_case}"
+                                            self.debug_print(f"    Applied case rules: {test_word!r} -> {formatted!r}")
+                                    else:
+                                        formatted = formatter(test_word)
+                                else:
+                                    formatted = formatter(test_word)
+                            else:
+                                # Apply normal unit formatting
+                                formatted = formatter(test_word)
+
+                            unit_debug = f"✓ Unit: {formatted!r} (from={original_parts!r}, pattern={pattern!r})"
+                            self.debug_print(f"    Applied formatter: {test_word!r} -> {formatted!r}")
+
+                            # Mark all parts that make up this unit as processed
+                            for idx in range(i, j+1):
+                                processed_parts[idx] = f"part of {unit_debug}"
+
+                            # Add the formatted unit preserving any spaces
+                            # Replace the matched content with formatted version
+                            parts_with_spaces = []
+                            for p in original_parts:
+                                if p.strip().lower() == test_word.lower():
+                                    parts_with_spaces.append(formatted)
+                                else:
+                                    parts_with_spaces.append(p)
+
+                            formatted_with_spaces = ''.join(parts_with_spaces)
+                            titled_parts.append(formatted_with_spaces)
+                            prev_part = formatted  # Store just the unit as prev_part
+
+                            self.debug_print(f"  {unit_debug}")
                             found_unit = True
+                            i = j  # Move to end of unit
                             break
+
                     if not found_unit:
-                        self.debug_print(f"  No exact unit pattern match found")
+                        # Only try number-word if no unit pattern matched
+                        if re.match(r'^\d+[a-z]+$', word_lower):
+                            self.debug_print(f"  Found number-word: {word!r}")
+                            word = word[:-1] + word[-1].upper()
+                            titled_parts.append(word)
+                            prev_part = word
+                            processed_parts[i] = f"number-word: {word!r}"
+                            continue
+                        self.debug_print(f"  No unit pattern match found")
 
                 if found_unit:
                     continue
@@ -878,7 +981,7 @@ class FileRenamer:
                     # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
                     base_word = titled_parts[-2] if len(titled_parts) >= 2 else ''
                     full_contraction = f"{base_word}'{word}" if prev_part == "'" and not titled_parts[-2].isspace() else None
-                    
+
                     self.debug_print(f"  Contraction check: {word!r} (base={base_word!r})")
                     # Check if it follows a word + apostrophe (not space + apostrophe)
                     if full_contraction:
@@ -930,10 +1033,10 @@ class FileRenamer:
                     not should_capitalize and  # Not after period/ellipsis
                     word != last_real_word and  # Not the last word
                     is_between_spaces):   # Between spaces, not after special char
-    
+
                     titled_parts.append(word)
                 else:
-    
+
                     titled_parts.append(word.capitalize())
                 prev_part = part
 

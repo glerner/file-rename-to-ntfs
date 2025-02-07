@@ -144,6 +144,23 @@ The script applies smart title case rules:
   - Common Media Words (part, vol, feat, ft, remix)
   - Be Verbs (am, are, is, was, were, be, been, being)
 
+## Unit Formatting Rules
+
+The script applies special case rules for units:
+
+### Bits and Bytes (b/B)
+Since we cannot determine whether a unit refers to bits or bytes from the text alone, we preserve the original case of 'b' or 'B' while enforcing proper case for the SI unit prefix symbols:
+- Prefixes kilo and smaller (k) are always lowercase
+- Prefixes mega and larger (M, G, T) are always uppercase
+
+Examples:
+```
+2tb -> 2Tb    (T uppercase, original b preserved)
+5Gb -> 5Gb    (G uppercase, original b preserved)
+10KB -> 10kB  (k lowercase, original B preserved)
+5MB -> 5MB    (M uppercase, original B preserved)
+```
+
 ## Output Format
 
 The script shows proposed changes in an easy-to-read format:
