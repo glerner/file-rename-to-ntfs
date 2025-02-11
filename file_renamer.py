@@ -330,7 +330,9 @@ class FileRenamer:
 
         # Business/Organizations
         'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
-        'VP', 'vs',  # Note: removed VS to avoid confusion, removed HR (human resources) since conflicts with hr (hour)
+        'VP', 'vs',
+        # Note: removed VS to avoid confusion,
+        # removed HR (human resources) since conflicts with hr (hour)
 
         # Other Common
         'ID', 'OK', 'PC', 'PIN', 'PO', 'PS', 'RIP', 'UFO', 'VIP', 'ZIP',
@@ -344,6 +346,17 @@ class FileRenamer:
     # In __init__, MONTH_FORMATS values get added to:
     # 1. ABBREVIATIONS - to handle dates with separators like 25-Jan-12
     # 2. UNIT_PATTERNS - to handle dates without separators like 2025jan12
+    # Units that can appear standalone without numbers
+    STANDALONE_UNITS = {
+        'hr', 'h',    # hour
+        'min',       # minute (but not 'm' which is meters)
+        's', 'sec',  # second
+        'd',         # day
+        'wk',        # week
+        'mo',        # month
+        'yr'         # year
+    }
+
     MONTH_FORMATS = {
         # English full names
         'january': 'January', 'february': 'February', 'march': 'March',
@@ -449,22 +462,42 @@ class FileRenamer:
         # Weight: lb, oz
         # Temperature: F (handled above with other temperature units)
 
-        # Time units (hr/h for hour)
-        r'\b\d+\s*hr\b': lambda s: f"{s}",  # 24hr -> 24hr
-        r'\b\d+\s*h\b': lambda s: f"{s}",   # 24h -> 24h
-        r'\b\d+\s*/\s*hr\b': lambda s: re.sub(r'(\d+)\s*/\s*hr',
-            lambda m: f"{m.group(1)}{R['/']}hr", s),  # 30/hr -> 30⧸hr
-        r'\b\d+\s*/\s*h\b': lambda s: re.sub(r'(\d+)\s*/\s*h',
-            lambda m: f"{m.group(1)}{R['/']}h", s),   # 30/h -> 30⧸h
+        # Time units (with or without numbers)
+        # Hours
+        r'\b\d*\s*hr\b': lambda s: f"{s}",  # 24hr -> 24hr, hr -> hr
+        r'\b\d*\s*h\b': lambda s: f"{s}",   # 24h -> 24h, h -> h
+        r'\b\d*\s*/\s*hr\b': lambda s: re.sub(r'(\d*)\s*/\s*hr',
+            lambda m: f"{m.group(1)}{R['/']}hr", s),  # 30/hr -> 30⧸hr, /hr -> ⧸hr
+        r'\b\d*\s*/\s*h\b': lambda s: re.sub(r'(\d*)\s*/\s*h',
+            lambda m: f"{m.group(1)}{R['/']}h", s),   # 30/h -> 30⧸h, /h -> ⧸h
 
-        # Speed units
-        # Metric (lowercase m for meter)
-        r'\b\d+\s*[kmgt]m/h\b': lambda s: re.sub(r'(\d+)\s*([kmgt])m/h',
-            lambda m: f"{m.group(1)}{m.group(2).lower()}m{R['/']}h", s),  # 80KM/h -> 80km/h
-        r'\b\d+\s*[kmgt]m/hr\b': lambda s: re.sub(r'(\d+)\s*([kmgt])m/hr',
-            lambda m: f"{m.group(1)}{m.group(2).lower()}m{R['/']}hr", s),  # 80KM/hr -> 80km/hr
-        # Imperial speed (naturally lowercase)
-        # mph, mi/h, mi/hr  (slash will be replaced with special char)
+        # Minutes
+        r'\b\d*\s*min\b': lambda s: f"{s}",  # 15min -> 15min, min -> min
+        r'\b\d*\s*/\s*min\b': lambda s: re.sub(r'(\d*)\s*/\s*min',
+            lambda m: f"{m.group(1)}{R['/']}min", s),  # 30/min -> 30⧸min, /min -> ⧸min
+
+        # Seconds
+        r'\b\d*\s*sec\b': lambda s: f"{s}",  # 30sec -> 30sec, sec -> sec
+        r'\b\d*\s*s\b': lambda s: f"{s}",    # 30s -> 30s, s -> s
+        r'\b\d*\s*/\s*sec\b': lambda s: re.sub(r'(\d*)\s*/\s*sec',
+            lambda m: f"{m.group(1)}{R['/']}sec", s),  # 30/sec -> 30⧸sec, /sec -> ⧸sec
+        r'\b\d*\s*/\s*s\b': lambda s: re.sub(r'(\d*)\s*/\s*s',
+            lambda m: f"{m.group(1)}{R['/']}s", s),    # 30/s -> 30⧸s, /s -> ⧸s
+
+        # Days, Weeks, Months, Years
+        r'\b\d*\s*d\b': lambda s: f"{s}",    # 30d -> 30d, d -> d
+        r'\b\d*\s*wk\b': lambda s: f"{s}",  # 52wk -> 52wk, wk -> wk
+        r'\b\d*\s*mo\b': lambda s: f"{s}",  # 12mo -> 12mo, mo -> mo
+        r'\b\d*\s*yr\b': lambda s: f"{s}",  # 10yr -> 10yr, yr -> yr
+
+        r'\b\d*\s*/\s*d\b': lambda s: re.sub(r'(\d*)\s*/\s*d',
+            lambda m: f"{m.group(1)}{R['/']}d", s),    # 30/d -> 30⧸d, /d -> ⧸d
+        r'\b\d*\s*/\s*wk\b': lambda s: re.sub(r'(\d*)\s*/\s*wk',
+            lambda m: f"{m.group(1)}{R['/']}wk", s),  # 52/wk -> 52⧸wk, /wk -> ⧸wk
+        r'\b\d*\s*/\s*mo\b': lambda s: re.sub(r'(\d*)\s*/\s*mo',
+            lambda m: f"{m.group(1)}{R['/']}mo", s),  # 12/mo -> 12⧸mo, /mo -> ⧸mo
+        r'\b\d*\s*/\s*yr\b': lambda s: re.sub(r'(\d*)\s*/\s*yr',
+            lambda m: f"{m.group(1)}{R['/']}yr", s),  # 10/yr -> 10⧸yr, /yr -> ⧸yr
     }
 
     # Common words that should not be capitalized in titles
@@ -485,9 +518,6 @@ class FileRenamer:
 
         # Common Words in Media Titles
         'part', 'vol', 'feat', 'ft', 'remix',
-
-        # Units
-        'hr', 'h',  # hour
 
         # Be Verbs (when not first/last)
         'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
@@ -849,15 +879,12 @@ class FileRenamer:
 
                 # Try unit patterns for:
                 # 1. Standard units (GB, MHz, Ω, etc.)
-                # 2. Dates with numbers (2025jan12, jan2025)
-                # 3. Units after a slash when previous word starts with a number (30km/hr)
+                # 2. Dates with month abbreviations (2025jan12, jan2025)
+                # 3. Units after a slash (30km/hr)
                 # This must come before abbreviation check to handle concatenated formats
                 if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω]', word_lower) or  # Standard units
-                    re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or         # Date formats
-                    (prev_part in ['/', '⧸'] and                            # After a slash
-                     titled_parts and                                        # Have previous words
-                     re.match(r'^\d+', titled_parts[-1]) and                # Previous word starts with number
-                     word_lower in ['h', 'hr', 'hour', 'hours'])):          # Current word is time unit
+                    re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or      # Date formats
+                    word_lower in self.STANDALONE_UNITS):                  # Standalone units
                     self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
                     self.debug_print(f"  Context: parts[{i}] in {parts!r}")
 
@@ -877,16 +904,6 @@ class FileRenamer:
                             test_word = word_lower + next_part
                             j = i + 2
                             self.debug_print(f"  Found space-separated unit: {unit_parts!r}")
-
-                            # Check for additional parts (like /hr in speed units)
-                            if j + 2 < len(parts) and parts[j+1] in ['/', '⧸']:
-                                speed_suffix = parts[j+2].lower()
-                                if speed_suffix in ['h', 'hr', 'hour', 'hours']:
-                                    unit_parts.extend([parts[j+1], parts[j+2]])
-                                    original_parts.extend([parts[j+1], parts[j+2]])
-                                    test_word += parts[j+1] + speed_suffix
-                                    j = j + 2
-                                    self.debug_print(f"  Found speed unit: {unit_parts!r}")
 
                     self.debug_print(f"  Testing unit pattern: {test_word!r}")
                     self.debug_print(f"  Original parts: {original_parts!r}")

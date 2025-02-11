@@ -18,7 +18,7 @@ from file_renamer import FileRenamer, main  # Import main
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
 
-    def _run_test_cases(self, test_cases, force_fail=False):
+    def _run_test_cases(self, test_cases, force_fail=True):
         """Helper method to run test cases and collect all failures.
 
         Args:
@@ -778,6 +778,20 @@ class TestFileRenamer(unittest.TestCase):
             ("10GB (GigaByte) file.txt", "10GB (Gigabyte) File.txt"),
             ("10gb (GigaBit) file.txt", "10Gb (Gigabit) File.txt"),
             ("100ω resistor.txt", "100Ω Resistor.txt"),  # Greek letter unit
+
+            # Standalone units and units with slashes
+            ("5sec delay.txt", "5sec Delay.txt"),
+            ("30s timeout.log", "30s Timeout.log"),
+            ("events/sec log.txt", f"Events{R['/']}{R['/']}sec Log.txt"),
+            ("updates/s counter.dat", f"Updates{R['/']}{R['/']}s Counter.dat"),
+            ("24d retention.txt", "24d Retention.txt"),
+            ("52wk high.csv", "52wk High.csv"),
+            ("12mo forecast.xlsx", "12mo Forecast.xlsx"),
+            ("10yr plan.doc", "10yr Plan.doc"),
+            ("tasks/d report.txt", f"Tasks{R['/']}{R['/']}d Report.txt"),
+            ("jobs/wk stats.csv", f"Jobs{R['/']}{R['/']}wk Stats.csv"),
+            ("payments/mo summary.xlsx", f"Payments{R['/']}{R['/']}mo Summary.xlsx"),
+            ("growth/yr analysis.doc", f"Growth{R['/']}{R['/']}yr Analysis.doc"),
 
             # Date formats with month abbreviations
             ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),
