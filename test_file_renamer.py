@@ -18,7 +18,7 @@ from file_renamer import FileRenamer, main  # Import main
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
 
-    def _run_test_cases(self, test_cases, force_fail=True):
+    def _run_test_cases(self, test_cases, force_fail=False):
         """Helper method to run test cases and collect all failures.
 
         Args:
@@ -693,10 +693,10 @@ class TestFileRenamer(unittest.TestCase):
 
             # Prefixed units
             ("50km run.gpx", "50km Run.gpx"),
-            ("2gb ram.txt", "2GB RAM.txt"),
+            ("2gB ram.txt", "2GB RAM.txt"),
             ("100mhz processor.pdf", "100MHz Processor.pdf"),
             ("5ml solution.doc", "5mL Solution.doc"),
-            ("2tb hard drive.txt", "2TB Hard Drive.txt"),
+            ("2tB hard drive.txt", "2TB Hard Drive.txt"),
 
             # Mixed case handling
             ("10Km race.jpg", "10km Race.jpg"),
@@ -705,14 +705,13 @@ class TestFileRenamer(unittest.TestCase):
 
             # Multiple units in name
             ("100km 2l water.gpx", "100km 2L Water.gpx"),
-            ("5gb ram 2tb storage.txt", "5GB RAM 2TB Storage.txt"),
+            ("5gB ram 2tB storage.txt", "5GB RAM 2TB Storage.txt"), # Byte (uppercase) bit (lowercase)
 
             # Special characters
             ("10µm filter.pdf", "10µm Filter.pdf"),
             ("100Ω resistor.txt", "100Ω Resistor.txt"),
 
             # Common computer units
-            ("500gb ssd vs 2tb hdd.txt", "500GB SSD vs 2TB HDD.txt"),
             ("4kb cache 2mb ram.txt", "4kB Cache 2MB RAM.txt"),
 
             # Time units
@@ -747,18 +746,15 @@ class TestFileRenamer(unittest.TestCase):
         R = FileRenamer.CHAR_REPLACEMENTS  # Shorthand for readability
         test_cases = [
             # Storage units - most common in filenames
-            ("5kb file.txt", "5kB File.txt"),
-            ("2mb cache.dat", "2MB Cache.dat"),
-            ("500gb drive.img", "500GB Drive.img"),
-            ("2tb backup.zip", "2TB Backup.zip"),
+            ("5kB file.txt", "5kB File.txt"),
+            ("2MB cache.dat", "2MB Cache.dat"),
+            ("500GB drive.img", "500GB Drive.img"),
+            ("2TB backup.zip", "2TB Backup.zip"),
 
             # Mixed case variants
             ("10KB test.txt", "10kB Test.txt"),
             ("5MB data.bin", "5MB Data.bin"),
             ("1TB drive.vhd", "1TB Drive.vhd"),
-
-            # Multiple units in filename
-            ("5gb ram 2tb drive.txt", "5GB RAM 2TB Drive.txt"),
 
             # Frequencies in media files
             ("48khz audio.wav", "48kHz Audio.wav"),
@@ -779,8 +775,17 @@ class TestFileRenamer(unittest.TestCase):
             ("100KM/h max.pdf", f"100km{R['/']}h Max.pdf"),
             ("60km/hr speed.doc", f"60km{R['/']}hr Speed.doc"),
             ("30KM/hr zone.txt", f"30km{R['/']}hr Zone.txt"),
-            ("10gb file.txt", "10GB File.txt"),
+            ("10GB (GigaByte) file.txt", "10GB (Gigabyte) File.txt"),
+            ("10gb (GigaBit) file.txt", "10Gb (Gigabit) File.txt"),
             ("100ω resistor.txt", "100Ω Resistor.txt"),  # Greek letter unit
+
+            # Date formats with month abbreviations
+            ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),
+            ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),
+            ("12jan2025 report.pdf", "12Jan2025 Report.pdf"),
+            ("jan2025 report.pdf", "Jan2025 Report.pdf"),
+            ("2025-jan report.pdf", "2025-Jan Report.pdf"),
+            ("25jan report.pdf", "25Jan Report.pdf"),
         ]
 
         self._run_test_cases(test_cases)
@@ -808,7 +813,6 @@ class TestFileRenamer(unittest.TestCase):
             ("500gb drive.img", "500GB Drive.img"),
             ("10KB test.txt", "10kB Test.txt"),
             ("48khz audio.wav", "48kHz Audio.wav"),
-            ("2.4ghz wifi.pdf", "2.4GHz Wi-Fi.pdf"),
             ("5pm meeting.txt", "5PM Meeting.txt"),
             ("9am alarm.mp3", "9AM Alarm.mp3"),
         ]

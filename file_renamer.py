@@ -116,10 +116,10 @@ class FileRenamer:
         # ASCII opening brackets
         '(', '[', '{', '<',
         # Replacement opening brackets
-        '❬',  # Left Black Lenticular Bracket
-        '《',  # Left Double Angle Bracket
-        '⟦',  # Mathematical Left White Square Bracket
-        '⦃',  # Left White Curly Bracket
+        R['<'],   # Left Black Lenticular Bracket
+        R['<<'],  # Left Double Angle Bracket
+        R['[['],  # Mathematical Left White Square Bracket
+        R['{{'],  # Left White Curly Bracket
     }
 
     # All closing bracket characters (ASCII and replacements)
@@ -127,30 +127,30 @@ class FileRenamer:
         # ASCII closing brackets
         ')', ']', '}', '>',
         # Replacement closing brackets
-        '❭',  # Right Black Lenticular Bracket
-        '》',  # Right Double Angle Bracket
-        '⟧',  # Mathematical Right White Square Bracket
-        '⦄',  # Right White Curly Bracket
+        R['>'],   # Right Black Lenticular Bracket
+        R['>>'],  # Right Double Angle Bracket
+        R[']]'],  # Mathematical Right White Square Bracket
+        R['}}'],  # Right White Curly Bracket
     }
 
     # Characters that are allowed at the end of a filename
     ALLOWED_TRAILING_CHARS = CLOSING_BRACKETS | {
         '!',            # Exclamation mark
-        '＄',           # Full Width Dollar Sign
-        '＂',           # Full Width Quotation Mark
-        '⁇',           # Double Question Mark
+        R['$'],         # Full Width Dollar Sign
+        R['"'],        # Full Width Quotation Mark
+        R['?'],         # Double Question Mark
     }
 
     # Only include special characters that should act as word boundaries
     WORD_BOUNDARY_CHARS = {
-        '⧵', 'ː', '✱', '⁇', '│', '＂',  # Special character replacements
+        R['\\'], R[':'], R['*'], R['?'], R['|'], R['"'], R['/'],  # Special character replacements
         '.', ' ', '-', "'",              # Standard word boundaries
-        '❬', '❭',                        # Angle brackets
-        '…',                             # Ellipsis
+        R['<'], R['>'],                  # Angle brackets
+        R['...'],                        # Ellipsis
         '(', '[', '{', '<',              # ASCII opening brackets
         ')', ']', '}', '>',              # ASCII closing brackets
-        '❬', '《', '⟦', '⦃',             # Replacement opening brackets
-        '❭', '》', '⟧', '⦄',             # Replacement closing brackets
+        R['<'], R['<<'], R['[['], R['{{'],  # Replacement opening brackets
+        R['>'], R['>>'], R[']]'], R['}}'],  # Replacement closing brackets
     }
 
     # File extensions where we want to preserve the original case of the base name
@@ -329,8 +329,8 @@ class FileRenamer:
         'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER',
 
         # Business/Organizations
-        'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'HR', 'LLC', 'LLP',
-        'VP', 'vs',  # Note: removed VS to avoid confusion
+        'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
+        'VP', 'vs',  # Note: removed VS to avoid confusion, removed HR (human resources) since conflicts with hr (hour)
 
         # Other Common
         'ID', 'OK', 'PC', 'PIN', 'PO', 'PS', 'RIP', 'UFO', 'VIP', 'ZIP',
@@ -339,6 +339,30 @@ class FileRenamer:
         # Software/Platforms
         'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL',
     }
+
+    # Month names and abbreviations with proper capitalization
+    # In __init__, MONTH_FORMATS values get added to:
+    # 1. ABBREVIATIONS - to handle dates with separators like 25-Jan-12
+    # 2. UNIT_PATTERNS - to handle dates without separators like 2025jan12
+    MONTH_FORMATS = {
+        # English full names
+        'january': 'January', 'february': 'February', 'march': 'March',
+        'april': 'April', 'may': 'May', 'june': 'June', 'july': 'July',
+        'august': 'August', 'september': 'September', 'october': 'October',
+        'november': 'November', 'december': 'December',
+        # English abbreviations
+        'jan': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'apr': 'Apr',
+        'jun': 'Jun', 'jul': 'Jul', 'aug': 'Aug',
+        'sep': 'Sep', 'sept': 'Sept', 'oct': 'Oct', 'nov': 'Nov', 'dec': 'Dec',
+        # Spanish full names
+        'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo',
+        'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio',
+        'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre',
+        'noviembre': 'Noviembre', 'diciembre': 'Diciembre',
+        # Spanish abbreviations
+        'ene': 'Ene', 'abr': 'Abr', 'ago': 'Ago', 'dic': 'Dic'
+    }
+
 
     # Words with specific capitalization (not uppercase, not regular title case)
     SPECIAL_CASE_WORDS = {
@@ -394,6 +418,9 @@ class FileRenamer:
         r'\d+k[wvajn]\b': lambda s: f"{s[:-2]}k{s[-1].upper()}", # 5kw -> 5kW
         r'\d+[mgt][wvajn]\b': lambda s: f"{s[:-2]}{s[-2].upper()}{s[-1].upper()}", # 5mw -> 5MW, 5gw -> 5GW, 5tw -> 5TW
 
+        # Digital units (preserve lowercase)
+        r'\d+bit\b': lambda s: f"{s}",  # 24bit -> 24bit
+
         # Temperature units (always uppercase)
         r'\d+k\b': lambda s: f"{s[:-1]}K",   # 5k -> 5K (Kelvin)
         r'\d+c\b': lambda s: f"{s[:-1]}C",   # 25c -> 25C (Celsius)
@@ -413,6 +440,7 @@ class FileRenamer:
         r'\d+[mgt]va\b': lambda s: f"{s[:-3]}{s[-3].upper()}VA",  # 5mva -> 5MVA, 5gva -> 5GVA
 
         # Distance (m lowercase for meter)
+        r'\d+m\b': lambda s: f"{s[:-1]}m",  # 5M -> 5m (bare meters)
         r'\d+[kmgt]m\b': lambda s: f"{s[:-1]}{s[-1].lower()}",  # 5KM -> 5km
 
         # Imperial/British units (naturally lowercase after digits)
@@ -420,6 +448,14 @@ class FileRenamer:
         # Volume: oz, qt, gal
         # Weight: lb, oz
         # Temperature: F (handled above with other temperature units)
+
+        # Time units (hr/h for hour)
+        r'\b\d+\s*hr\b': lambda s: f"{s}",  # 24hr -> 24hr
+        r'\b\d+\s*h\b': lambda s: f"{s}",   # 24h -> 24h
+        r'\b\d+\s*/\s*hr\b': lambda s: re.sub(r'(\d+)\s*/\s*hr',
+            lambda m: f"{m.group(1)}{R['/']}hr", s),  # 30/hr -> 30⧸hr
+        r'\b\d+\s*/\s*h\b': lambda s: re.sub(r'(\d+)\s*/\s*h',
+            lambda m: f"{m.group(1)}{R['/']}h", s),   # 30/h -> 30⧸h
 
         # Speed units
         # Metric (lowercase m for meter)
@@ -449,6 +485,9 @@ class FileRenamer:
 
         # Common Words in Media Titles
         'part', 'vol', 'feat', 'ft', 'remix',
+
+        # Units
+        'hr', 'h',  # hour
 
         # Be Verbs (when not first/last)
         'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
@@ -547,6 +586,28 @@ class FileRenamer:
         split_chars = self.delimiters + special_chars
         self.split_pattern = f"([{''.join(re.escape(c) for c in split_chars)}])"
         self.special_chars = set(special_chars)  # For faster lookups
+
+        # Month names and abbreviations must be in ABBREVIATIONS to handle dates with separators:
+        #   25-Jan-12 -> split into ['25', '-', 'jan', '-', '12'] and 'jan' -> 'Jan'
+        #   25.Jan.12 -> split into ['25', '.', 'jan', '.', '12'] and 'jan' -> 'Jan'
+        # Cannot move these to UNIT_PATTERNS because separators break the pattern matching
+        self.ABBREVIATIONS.update(proper for _, proper in self.MONTH_FORMATS.items())
+
+        # Add month patterns to UNIT_PATTERNS for dates without separators:
+        #   2025jan12 -> stays as one word, need pattern to find/replace 'jan' -> 'Jan'
+        # Cannot use ABBREVIATIONS because it only matches whole words, not parts
+        # Must handle these like other unit patterns (e.g. 5k -> 5K) to find/replace
+        # the month part while preserving the surrounding numbers
+        # Handle both formats: numbers before (2025jan12) and after (jan2025)
+        month_patterns = {}
+        for month, proper in self.MONTH_FORMATS.items():
+            # Pattern for numbers before month (2025jan12)
+            month_patterns[f'\\d+{month}\\d*\\b'] = \
+                lambda s, m=month, p=proper: re.sub(m, p, s, flags=re.IGNORECASE)
+            # Pattern for month before numbers (jan2025)
+            month_patterns[f'\\b{month}\\d+\\b'] = \
+                lambda s, m=month, p=proper: re.sub(m, p, s, flags=re.IGNORECASE)
+        self.UNIT_PATTERNS.update(month_patterns)
 
     def _clean_trailing_chars(self, text: str, debug_prefix: str = '') -> str:
         """Clean trailing special characters from text.
@@ -786,9 +847,17 @@ class FileRenamer:
                 found_unit = False
                 word_lower = word.lower()
 
-                # Only try unit patterns if the word looks like it could be a unit
-                # (starts with number and is followed by known unit characters)
-                if re.match(r'^\d+[kmgtw]?[wvajnlhzbf]', word_lower):
+                # Try unit patterns for:
+                # 1. Standard units (GB, MHz, Ω, etc.)
+                # 2. Dates with numbers (2025jan12, jan2025)
+                # 3. Units after a slash when previous word starts with a number (30km/hr)
+                # This must come before abbreviation check to handle concatenated formats
+                if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω]', word_lower) or  # Standard units
+                    re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or         # Date formats
+                    (prev_part in ['/', '⧸'] and                            # After a slash
+                     titled_parts and                                        # Have previous words
+                     re.match(r'^\d+', titled_parts[-1]) and                # Previous word starts with number
+                     word_lower in ['h', 'hr', 'hour', 'hours'])):          # Current word is time unit
                     self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
                     self.debug_print(f"  Context: parts[{i}] in {parts!r}")
 
@@ -896,21 +965,26 @@ class FileRenamer:
                         # Only try number-word if no unit pattern matched
                         if re.match(r'^\d+[a-z]+$', word_lower):
                             self.debug_print(f"  Found number-word: {word!r}")
-                            word = word[:-1] + word[-1].upper()
-                            titled_parts.append(word)
-                            prev_part = word
-                            processed_parts[i] = f"number-word: {word!r}"
-                            continue
+                            # Find where the numbers end and letters begin
+                            match = re.match(r'^(\d+)([a-z]+)$', word_lower)
+                            if match:
+                                numbers, letters = match.groups()
+                                word = numbers + letters[0].upper() + letters[1:]
+                                titled_parts.append(word)
+                                prev_part = word
+                                processed_parts[i] = f"number-word: {word!r}"
+                                continue
                         self.debug_print(f"  No unit pattern match found")
 
                 if found_unit:
                     continue
 
-                # Handle abbreviations with the following steps:
+                # Handle abbreviations and month names with the following steps:
                 # 1. If at end of text, try adding period when testing against ABBREVIATIONS
                 # 2. Check if word is in ABBREVIATIONS set as-is
                 # 3. Check if word is in ABBREVIATIONS set without periods
-                # 4. If found, preserve the format from ABBREVIATIONS set
+                # 4. Check if word contains a month name or abbreviation
+                # 5. If found, preserve the format from ABBREVIATIONS set or MONTH_PATTERNS
 
                 # Build the word to test, handling period-separated parts
                 test_word = word
