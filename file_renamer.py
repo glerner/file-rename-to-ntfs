@@ -224,13 +224,15 @@ class FileRenamer:
 
     # Common abbreviations to preserve in uppercase
     ABBREVIATIONS = {
-        # Academic Degrees (single-letter-per-part use periods)
+        # Academic Degrees (use periods just for testing the clean_abbreviation function)
         'B.A', 'B.S', 'M.A', 'M.B.A', 'M.D', 'M.S', 'Ph.D', 'J.D',
 
         # Professional Titles (multi-letter, no periods)
         'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Rev',
         'Hon',  # Honorable (Judge)
         'Sr', 'Sra', 'Srta',  # Señor, Señora, Señorita
+        'Asst',              # Assistant
+        'VP', 'EVP', 'SVP',  # Vice President variants
 
         # Name Suffixes (no periods)
         'Jr', 'Sr', 'II', 'III', 'IV',  # Note: V excluded as it conflicts with 'versus'
@@ -311,7 +313,7 @@ class FileRenamer:
         'SQL', 'TB', 'USB', 'VHS', 'XML', 'JSON', 'PHP', 'Wi-Fi',
         'CPU', 'GPU', 'SSD', 'HDD', 'NVMe', 'SATA', 'RAID', 'LAN', 'WAN',
         'DNS', 'FTP', 'SSH', 'SSL', 'TLS', 'URL', 'URI', 'API', 'SDK',
-        'IDE', 'GUI', 'CLI', 'CSS', 'RSS', 'UPC', 'QR', 'AI', 'ML',
+        'IDE', 'GUI', 'CLI', 'CSS', 'RSS', 'UPC', 'UPS','QR', 'AI', 'ML',
 
         # Media Formats
         # Images
@@ -353,7 +355,9 @@ class FileRenamer:
         'd',         # day
         'wk',        # week
         'mo',        # month
-        'yr'         # year
+        'yr',        # year
+        'sq',        # square
+        'sqm'        # square meters
     }
 
     MONTH_FORMATS = {
@@ -415,8 +419,17 @@ class FileRenamer:
         r'\d+l\b': lambda s: f"{s[:-1]}L",  # 5l -> 5L
         r'\d+[kmgt]l\b': lambda s: f"{s[:-2]}{s[-2].lower()}L",  # 5ml -> 5mL
 
+        # Video resolutions (p/i lowercase, number preserved)
+        r'\d+[pi]\b': lambda s: f"{s}",  # 1080p -> 1080p, 1080i -> 1080i
+        r'\d+k\b': lambda s: f"{s}",  # 4k -> 4k
+        r'\d+K\b': lambda s: f"{s}",  # 4K -> 4K
+
         # Greek letter units (always uppercase)
         r'\d+ω\b': lambda s: f"{s[:-1]}Ω",  # 100ω -> 100Ω
+
+        # Square measurements
+        r'\d+sq\b': lambda s: f"{s}",  # 50sq -> 50sq
+        r'\d+sqm\b': lambda s: f"{s}",  # 100sqm -> 100sqm
 
         # Single-letter SI units (W, V, A, J, N)
         r'\d+w\b': lambda s: f"{s[:-1]}W",   # 100w -> 100W (Watt)
@@ -638,6 +651,51 @@ class FileRenamer:
                 lambda s, m=month, p=proper: re.sub(m, p, s, flags=re.IGNORECASE)
         self.UNIT_PATTERNS.update(month_patterns)
 
+    def _check_abbreviation_with_context(self, current_part, titled_parts, is_last_part):
+        """Check if current part and previous parts form an abbreviation.
+
+        Args:
+            current_part: Current part being processed
+            titled_parts: List of already processed parts
+            is_last_part: True if this is the last part of the filename (extension already stripped)
+
+        Examples:
+            "M.D" -> current="D", titled=["M", "."] -> "MD"
+            "LT.COL" -> current="COL", titled=["LT", "."] -> "Lt.Col"
+
+        Boundary cases (at end of filename):
+            "m.d" -> current="d", titled=["M", "."], is_last_part=True -> "MD"
+        """
+        self.debug_print(f"Entered check_abbreviation_with_context, titled_parts={titled_parts!r}")
+
+        if not titled_parts:
+            return False
+
+        # Get previous parts until we hit a space or comma
+        # This allows periods and other chars to be part of abbreviation
+        # But spaces/commas separate different abbreviations
+        prev_parts = []
+        for part in titled_parts[::-1]:
+            if part in {' ', ','}:
+                break
+            prev_parts.insert(0, part)
+        self.debug_print(f"    prev_parts collected: {prev_parts!r}")
+
+        # Try combining with current part
+        combined = ''.join(prev_parts) + current_part
+        cleaned = self._clean_abbreviation(combined)
+        self.debug_print(f"    combined={combined!r} cleaned={cleaned!r}")
+
+        # Check if it forms a known abbreviation (case-insensitive)
+        for abbr in self.ABBREVIATIONS:
+            if cleaned.upper() == abbr.upper():
+                # Use the case from ABBREVIATIONS
+                titled_parts[-len(prev_parts):] = []
+                titled_parts.append(abbr)
+                self.debug_print(f"    ✓ Found abbreviation: {abbr!r} (titled_parts={titled_parts!r})")
+                return True
+        return False
+
     def _clean_trailing_chars(self, text: str, debug_prefix: str = '') -> str:
         """Clean trailing special characters from text.
 
@@ -799,7 +857,7 @@ class FileRenamer:
                 self.debug_print(f"Extension {potential_ext!r} not in recognized list")
 
         # For normal files, apply title case to the name
-        # For files with known extensions, preserve the original name case
+        # For files with extensions such as programming files (.c, .py, .js), preserve the original name case
         # Extensions are always lowercased
         if not extension.lower() in self.PRESERVE_CASE_EXTENSIONS:
             # Build pattern that matches our word boundaries
@@ -817,6 +875,7 @@ class FileRenamer:
 
             titled_parts = []
             prev_part = ''
+            prev_was_abbrev = False
             last_real_word = None
             for part in parts:
                 if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
@@ -833,8 +892,11 @@ class FileRenamer:
                 if not part:  # Skip empty parts
                     continue
 
+                self.debug_print(f"\nProcessing part {i}: {part!r} (len={len(part)}, has_boundary={[c for c in part if c in self.WORD_BOUNDARY_CHARS]})")
+
                 # Convert to title case, handling special cases
                 word = part.lower()  # First convert to lowercase
+                self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
 
                 self.debug_print(f"\n⮑ Word: {word!r} (prev={prev_part!r}, contraction={word in self.CONTRACTIONS})")
 
@@ -846,10 +908,41 @@ class FileRenamer:
 
                 # Keep separators as is
                 if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
+                    # Skip adding period if it follows an abbreviation
+                    if part == '.' and titled_parts and titled_parts[-1] in self.ABBREVIATIONS:
+                        self.debug_print(f"Skipping period after abbreviation: {titled_parts[-1]!r}")
+                        prev_part = part
+                        continue
+
                     self.debug_print(f"Keeping separator: {part!r}")
                     titled_parts.append(part)
                     prev_part = part
+                    # Only reset prev_was_abbrev for spaces and periods
+                    if part in {' ', '.'}:
+                        prev_was_abbrev = False
                     continue
+
+                # First check if this part could be part of an abbreviation
+                # This must come before unit/contraction checks to properly handle cases like:
+                # - "m.d" -> "MD" (abbreviation)
+                # - "10d" -> "10d" (unit)
+                # - "I'd" -> "I'd" (contraction)
+                # Debug abbreviation check
+                self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
+                if titled_parts:
+                    self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}")
+                    self.debug_print(f"    all titled_parts={titled_parts!r}")
+
+                if part.isalpha() and titled_parts and titled_parts[-1] == '.':
+                    self.debug_print(f"  ✓ Found potential abbreviation part")
+                    # Check if current part with previous parts forms an abbreviation
+                    # For example: current='d', prev=['M', '.'] -> 'M.d' -> 'MD'
+                    is_last = i == len(parts) - 1 or all(p in self.WORD_BOUNDARY_CHARS for p in parts[i+1:])
+
+                    if self._check_abbreviation_with_context(word, titled_parts, is_last):
+                        prev_part = word
+                        prev_was_abbrev = True
+                        continue
 
                 # Special case: AM/PM after numbers (including when joined like "9am")
                 if re.match(r'\d+[ap]m\b', word, re.IGNORECASE):
@@ -995,76 +1088,59 @@ class FileRenamer:
                 if found_unit:
                     continue
 
-                # Handle abbreviations and month names with the following steps:
-                # 1. If at end of text, try adding period when testing against ABBREVIATIONS
-                # 2. Check if word is in ABBREVIATIONS set as-is
-                # 3. Check if word is in ABBREVIATIONS set without periods
-                # 4. Check if word contains a month name or abbreviation
-                # 5. If found, preserve the format from ABBREVIATIONS set or MONTH_PATTERNS
-
-                # Build the word to test, handling period-separated parts
-                test_word = word
+                # Handle abbreviations - check if this word is an abbreviation
+                # If the previous word was also an abbreviation, we'll handle this
+                # one separately rather than trying to join them
+                test_word = word.upper()
                 j = i
-                if i + 1 < len(parts) and parts[i+1].strip() == '.':
-                    word_parts = [word]
-                    j = i + 1
-                    while j < len(parts) - 1 and parts[j].strip() == '.':
-                        next_part = parts[j+1].strip()
-                        if not next_part:  # Skip empty parts
-                            j += 1
-                            continue
-                        word_parts.extend(['.', next_part])
-                        j += 2
-                    test_word = ''.join(word_parts)
 
-                # Step 1: If at end of text, try with trailing period
-                is_end_of_text = j >= len(parts) - 1
-                test_variants = [test_word.upper()]
-                if is_end_of_text:
-                    test_variants.insert(0, test_word.upper() + '.')
-                self.debug_print(f"  Abbrev check: {test_word!r} (end={is_end_of_text}, variants={test_variants})")
-
-                # Step 2 & 3: Check variants against ABBREVIATIONS
+                # Check if this word matches an abbreviation
                 found_abbrev = None
-                for test_variant in test_variants:
-                    # Try exact match
-                    if test_variant in self.ABBREVIATIONS:
-                        found_abbrev = test_variant
-                        self.debug_print(f"    ✓ Abbrev: {found_abbrev!r} (exact)")
-                        break
-                    # Try without periods
-                    no_periods = re.sub(r'\.', '', test_variant)
+                abbrev_debug = ""
 
-                    for abbr in self.ABBREVIATIONS:
-                        abbr_no_periods = re.sub(r'\.', '', abbr)
-                        if no_periods.upper() == abbr_no_periods.upper():
-                            found_abbrev = abbr
-                            self.debug_print(f"    ✓ Abbrev: {abbr!r} (no periods)")
-                            break
-                    if found_abbrev:
+                self.debug_print(f"  Abbrev check: {test_word!r} (end={j >= len(parts) - 1})")
+
+                # Try exact match first (case-insensitive)
+                for abbr in self.ABBREVIATIONS:
+                    if test_word.upper() == abbr.upper():
+                        found_abbrev = abbr  # Use case from ABBREVIATIONS
+                        abbrev_debug = f"✓ {found_abbrev!r} (exact)"
                         break
-                if not found_abbrev:
-                    self.debug_print("  No abbreviation match found")
                 else:
-                    # Handle found abbreviation
-                    original_parts = parts[i:j+1]
-                    abbrev_debug = f"✓ {found_abbrev!r} (from={original_parts!r})"
+                    # Try without periods
+                    clean_word = self._clean_abbreviation(test_word)
+                    for abbr in self.ABBREVIATIONS:
+                        if clean_word.upper() == abbr.upper():
+                            found_abbrev = abbr
+                            abbrev_debug = f"✓ {found_abbrev!r} (no periods)"
+                            break
 
-                    # Mark all parts that make up this abbreviation as processed
-                    for idx in range(i, j+1):
-                        processed_parts[idx] = f"part of {abbrev_debug}"
+                # If at end of text and no match, try with trailing period
+                if not found_abbrev and j >= len(parts) - 1:
+                    test_word_period = test_word + '.'
+                    if test_word_period in self.ABBREVIATIONS:
+                        found_abbrev = test_word_period
+                        abbrev_debug = f"✓ {found_abbrev!r} (with period)"
+
+                if found_abbrev:
+                    # Found an abbreviation
+                    processed_parts[i] = abbrev_debug
+                    self.debug_print(abbrev_debug)
 
                     if '.' in found_abbrev:
                         # Split into parts to preserve periods
                         parts_to_add = re.split(r'([.])', found_abbrev)
                         titled_parts.extend(parts_to_add)
                         prev_part = found_abbrev  # Keep the full abbreviation as previous part
+                        prev_was_abbrev = True  # Mark that we found a valid abbreviation
                     else:
                         titled_parts.append(found_abbrev)
                         prev_part = found_abbrev  # Keep the full abbreviation as previous part
-
-                    self.debug_print(abbrev_debug)
+                        prev_was_abbrev = True  # Mark that we found a valid abbreviation
                     continue
+
+                # Not an abbreviation, let it fall through to normal word handling
+                self.debug_print("  No abbreviation match found")
 
                 # Finally check for contractions
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
@@ -1095,6 +1171,7 @@ class FileRenamer:
                 last_non_space = next((p for p in reversed(titled_parts) if p.strip()), '') if titled_parts else ''
 
                 # Always capitalize after certain punctuation or if it's the first/last word
+                self.debug_print(f"  Title case check: first={not titled_parts}, last={word == last_real_word}, after_trigger={last_non_space in self.CAPITALIZATION_TRIGGERS}")
                 should_capitalize = (
                     not titled_parts or  # First word
                     last_non_space in self.CAPITALIZATION_TRIGGERS or  # After trigger characters
@@ -1124,9 +1201,10 @@ class FileRenamer:
                     word != last_real_word and  # Not the last word
                     is_between_spaces):   # Between spaces, not after special char
 
+                    self.debug_print(f"  Adding to titled_parts: {word!r} (lowercase)")
                     titled_parts.append(word)
                 else:
-
+                    self.debug_print(f"  Adding to titled_parts: {word.capitalize()!r} (capitalized)")
                     titled_parts.append(word.capitalize())
                 prev_part = part
 
