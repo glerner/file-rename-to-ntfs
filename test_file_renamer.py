@@ -18,7 +18,7 @@ from file_renamer import FileRenamer, main  # Import main
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
 
-    def _run_test_cases(self, test_cases, force_fail=True):
+    def _run_test_cases(self, test_cases, force_fail=False):
         """Helper method to run test cases and collect all failures.
 
         Args:
@@ -65,7 +65,10 @@ class TestFileRenamer(unittest.TestCase):
                 print(f"\n==================================================\n")
                 print(f"Finished processing: {original!r}")
                 print(f"Result:   {highlight_special_chars(result)}")
-                print(f"Expected: {highlight_special_chars(expected)}")
+                if result != expected:
+                    print(f"{Fore.CYAN}Expected:{Style.RESET_ALL} {highlight_special_chars(expected)}")
+                else:
+                    print(f"Expected: {highlight_special_chars(expected)}")
                 print(f"{'='*50}\n")
 
                 if result != expected:
@@ -782,16 +785,16 @@ class TestFileRenamer(unittest.TestCase):
             # Standalone units and units with slashes
             ("5sec delay.txt", "5sec Delay.txt"),
             ("30s timeout.log", "30s Timeout.log"),
-            ("events/sec log.txt", f"Events{R['/']}{R['/']}sec Log.txt"),
-            ("updates/s counter.dat", f"Updates{R['/']}{R['/']}s Counter.dat"),
+            ("events/sec log.txt", f"Events{R['/']}sec Log.txt"),
+            ("updates/s counter.dat", f"Updates{R['/']}s Counter.dat"),
             ("24d retention.txt", "24d Retention.txt"),
             ("52wk high.csv", "52wk High.csv"),
             ("12mo forecast.xlsx", "12mo Forecast.xlsx"),
             ("10yr plan.doc", "10yr Plan.doc"),
-            ("tasks/d report.txt", f"Tasks{R['/']}{R['/']}d Report.txt"),
-            ("jobs/wk stats.csv", f"Jobs{R['/']}{R['/']}wk Stats.csv"),
-            ("payments/mo summary.xlsx", f"Payments{R['/']}{R['/']}mo Summary.xlsx"),
-            ("growth/yr analysis.doc", f"Growth{R['/']}{R['/']}yr Analysis.doc"),
+            ("tasks/d report.txt", f"Tasks{R['/']}d Report.txt"),
+            ("jobs/wk stats.csv", f"Jobs{R['/']}wk Stats.csv"),
+            ("payments/mo summary.xlsx", f"Payments{R['/']}mo Summary.xlsx"),
+            ("growth/yr analysis.doc", f"Growth{R['/']}yr Analysis.doc"),
 
             # Date formats with month abbreviations
             ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),

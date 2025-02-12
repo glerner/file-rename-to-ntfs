@@ -237,8 +237,7 @@ class FileRenamer:
 
         # Military Ranks (no periods)
         'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
-        'Lt.Col', 'Lt.Gen', 'Maj.Gen', 'Brig.Gen',  # Compound ranks
-        'Maj', 'Adm', 'Cmdr',  # More ranks
+        'Maj', 'Adm', 'Cmdr', 'Brig', # More ranks
         'USMC', 'USN', 'USAF', 'USA',  # Service branches
 
         # Movie/TV Ratings (no periods)
