@@ -268,7 +268,8 @@ class FileRenamer:
         # Government/Organizations
         'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOE', 'DOJ', 'FBI', 'FCC',
         'FDA', 'FEMA', 'FTC', 'IRS', 'NASA', 'NOAA', 'NSA', 'TSA', 'USDA',
-        'EPA', 'ICE', 'SEC', 'SSA', 'UN', 'USPS',
+        'EPA', 'ICE', 'SSA', 'UN', 'USPS',
+        # not 'SEC', 'sec' is a numbered unit
 
         # Mexican States (official abbreviations)
         'AGS',  # Aguascalientes
@@ -323,7 +324,7 @@ class FileRenamer:
         # Audio
         'MP3', 'WAV', 'AAC', 'OGG', 'FLAC', 'WMA', 'M4A',
         # Quality/Standards
-        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD', 'fps',
+        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
 
         # Medical/Scientific
         'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
@@ -445,6 +446,10 @@ class FileRenamer:
 
         # Digital units (preserve lowercase)
         r'\d+bit\b': lambda s: f"{s}",  # 24bit -> 24bit
+        r'\d+fps\b': lambda s: f"{s}",  # 30fps -> 30fps
+        r'\d+rpm\b': lambda s: f"{s}",  # 33rpm -> 33rpm
+        r'\d+mph\b': lambda s: f"{s}",  # 60mph -> 60mph
+        r'\d+deg\b': lambda s: f"{s}",  # 68deg -> 68deg
 
         # Temperature units (always uppercase)
         r'\d+k\b': lambda s: f"{s[:-1]}K",   # 5k -> 5K (Kelvin)
@@ -885,6 +890,7 @@ class FileRenamer:
             titled_parts = []
             prev_part = ''
             prev_was_abbrev = False
+            prior_abbreviation = None
             last_real_word = None
             for part in parts:
                 if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
@@ -917,9 +923,9 @@ class FileRenamer:
 
                 # Keep separators as is
                 if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
-                    # Skip adding period if it follows an abbreviation
-                    if part == '.' and titled_parts and titled_parts[-1] in self.ABBREVIATIONS:
-                        self.debug_print(f"Skipping period after abbreviation: {titled_parts[-1]!r}")
+                    # Skip adding period if it follows an abbreviation or compound
+                    if part == '.' and ((titled_parts and titled_parts[-1] in self.ABBREVIATIONS) or prior_abbreviation):
+                        self.debug_print(f"Skipping period after abbreviation: {prior_abbreviation or titled_parts[-1]!r}")
                         prev_part = part
                         continue
 
@@ -947,23 +953,42 @@ class FileRenamer:
                     if (titled_parts and
                         prev_part == '.' and
                         titled_parts[-1] in self.ABBREVIATIONS):
+                        self.debug_print(f"  Compound check state:")
+                        self.debug_print(f"    part={part!r}")
+                        self.debug_print(f"    prev_part={prev_part!r}")
+                        self.debug_print(f"    titled_parts={titled_parts!r}")
+
+                        # Get first abbreviation before loop
+                        first_abbrev = titled_parts[-1]    # e.g. "Lt"
+                        second_abbrev = None  # Initialize to None
+                        self.debug_print(f"    first_abbrev={first_abbrev!r}")
+
                         # Check if second part matches an abbreviation
                         for abbr in self.ABBREVIATIONS:
                             if part.upper() == abbr.upper():
                                 # Found abbreviation-period-abbreviation pattern
-                                first_abbrev = titled_parts[-1]    # e.g. "Lt"
-                                second_abbrev = abbr              # Use case from ABBREVIATIONS
+                                self.debug_print(f"    Match found: part.upper()={part.upper()!r} == abbr.upper()={abbr.upper()!r}")
+                                second_abbrev = abbr  # Use case from ABBREVIATIONS
+                                self.debug_print(f"    Set second_abbrev={second_abbrev!r}")
 
                                 # Combine abbreviations (no need to remove period since it wasn't added)
+                                self.debug_print(f"    Before combine: titled_parts[-1]={titled_parts[-1]!r}")
                                 titled_parts[-1] = first_abbrev + second_abbrev
+                                self.debug_print(f"    After combine: titled_parts[-1]={titled_parts[-1]!r}")
+
+                                # Update tracking variables
+                                prev_part = titled_parts[-1]
+                                prev_was_abbrev = True
+                                prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
                                 break
 
-                        # Update prev_part to combined abbreviation
-                        prev_part = first_abbrev + second_abbrev
-                        prev_was_abbrev = True
+                        self.debug_print(f"    After loop:")
+                        self.debug_print(f"      second_abbrev={second_abbrev!r}")
+                        self.debug_print(f"      titled_parts={titled_parts!r}")
+                        self.debug_print(f"      prev_part={prev_part!r}")
 
-                        self.debug_print(f"    ✓ Found compound abbreviation: {first_abbrev!r} + '.' + {second_abbrev!r} -> {titled_parts[-1]!r}")
-                        continue
+                        if second_abbrev is not None:
+                            continue
 
                     # Otherwise check for normal abbreviation
                     elif titled_parts and prev_part == '.':
@@ -991,6 +1016,7 @@ class FileRenamer:
                 if word_lower == 'wifi':  # Convert all variants to Wi-Fi
                     titled_parts.append('Wi-Fi')
                     prev_part = part
+                    prior_abbreviation = None  # Reset for non-abbreviation
                     continue
                 for special_word in self.SPECIAL_CASE_WORDS:
                     if word_lower == special_word.lower():
@@ -1007,7 +1033,7 @@ class FileRenamer:
                 # 2. Dates with month abbreviations (2025jan12, jan2025)
                 # 3. Units after a slash (30km/hr)
                 # This must come before abbreviation check to handle concatenated formats
-                if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω]', word_lower) or  # Standard units
+                if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω][h]?', word_lower) or  # Standard units (including compound like wh)
                     re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or      # Date formats
                     word_lower in self.STANDALONE_UNITS):                  # Standalone units
                     self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
@@ -1240,6 +1266,7 @@ class FileRenamer:
                     self.debug_print(f"  Adding to titled_parts: {word.capitalize()!r} (capitalized)")
                     titled_parts.append(word.capitalize())
                 prev_part = part
+                prior_abbreviation = None  # Reset for non-abbreviation word
 
             # Join parts and normalize periods
             name = ''.join(titled_parts)

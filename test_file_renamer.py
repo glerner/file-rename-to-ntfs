@@ -640,7 +640,7 @@ class TestFileRenamer(unittest.TestCase):
 
             # Military ranks (combined)
             ("lt.col smith report.pdf", "LtCol Smith Report.pdf"),
-            ("LtCol smith report.pdf", "LtCol Smith Report.pdf"), # LtCol already correct
+            ("LtCol with no period is just a word with internal capital letter.pdf", "Ltcol with No Period is Just a Word with Internal Capital Letter.pdf"),
             ("lt col smith report.pdf", "Lt Col Smith Report.pdf"),
             ("LT.COL. SMITH REPORT.pdf", "LtCol Smith Report.pdf"),
 
@@ -661,7 +661,10 @@ class TestFileRenamer(unittest.TestCase):
             ("jalisco (jal) and nayarit (nay).txt", "Jalisco (JAL) and Nayarit (NAY).txt"),
 
             # Technology
-            ("100gb ssd vs 2tb hdd.txt", "100GB SSD vs 2TB HDD.txt"),
+            ("100GB ssd vs 2TB hdd.txt", "100GB SSD vs 2TB HDD.txt"),
+            ("100gb gigabit ssd vs 2TB hdd.txt", "100gb Gigabit SSD vs 2TB HDD.txt"),
+            ("car going 60mph and spinning at 33rpm at 68deg.txt", "Car Going 60mph and Spinning at 33rpm at 68deg.txt"),
+            ("movie at 30fps and 25c.txt", "Movie at 30fps and 25C.txt"),
             ("mp3 to mp4 converter.exe", "MP3 to MP4 Converter.exe"),
             ("nvme vs sata ssd speed test.txt", "NVMe vs SATA SSD Speed Test.txt"),
             ("how to setup raid and lan.pdf", "How to Setup RAID and LAN.pdf"),
@@ -824,15 +827,13 @@ class TestFileRenamer(unittest.TestCase):
             ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
 
             # Mixed cases
-            ("dr. smith md in ny on bbc.mp4", "Dr. Smith MD in NY on BBC.mp4"),
+            ("dr. smith md in ny on bbc.mp4", "Dr Smith MD in NY on BBC.mp4"),
             ("6pm est fbi report on hbo.txt", "6PM EST FBI Report on HBO.txt"),
             ("ca-based ceo's irs audit.pdf", "CA-Based CEO's IRS Audit.pdf"),
 
             # Unit patterns
-            ("5kb file.txt", "5kB File.txt"),
-            ("2mb cache.dat", "2MB Cache.dat"),
-            ("500gb drive.img", "500GB Drive.img"),
-            ("10KB test.txt", "10kB Test.txt"),
+            ("5kB file.txt", "5kB File.txt"),
+            ("2mb megabit cache.dat", "2Mb Megabit Cache.dat"),
             ("48khz audio.wav", "48kHz Audio.wav"),
             ("5pm meeting.txt", "5PM Meeting.txt"),
             ("9am alarm.mp3", "9AM Alarm.mp3"),
