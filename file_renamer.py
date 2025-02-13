@@ -689,10 +689,19 @@ class FileRenamer:
         # Check if it forms a known abbreviation (case-insensitive)
         for abbr in self.ABBREVIATIONS:
             if cleaned.upper() == abbr.upper():
-                # Use the case from ABBREVIATIONS
-                titled_parts[-len(prev_parts):] = []
-                titled_parts.append(abbr)
-                self.debug_print(f"    ✓ Found abbreviation: {abbr!r} (titled_parts={titled_parts!r})")
+                # Check if this should be a compound abbreviation
+                if prev_parts == ['.'] and len(titled_parts) >= 2 and titled_parts[-2] in self.ABBREVIATIONS:
+                    # Show state before combining
+                    self.debug_print(f"    Compound check: prev_parts={prev_parts!r} titled_parts={titled_parts!r} current={current_part!r}")
+                    # Combine with previous abbreviation
+                    first_abbrev = titled_parts[-2]
+                    titled_parts[-2] = first_abbrev + abbr
+                    self.debug_print(f"    ✓ Found compound abbreviation: {first_abbrev!r} + '.' + {abbr!r} -> {titled_parts[-2]!r}")
+                else:
+                    # Store as individual abbreviation
+                    titled_parts[-len(prev_parts):] = []
+                    titled_parts.append(abbr)
+                    self.debug_print(f"    ✓ Found abbreviation: {abbr!r} (titled_parts={titled_parts!r})")
                 return True
         return False
 
@@ -933,16 +942,40 @@ class FileRenamer:
                     self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}")
                     self.debug_print(f"    all titled_parts={titled_parts!r}")
 
-                if part.isalpha() and titled_parts and titled_parts[-1] == '.':
-                    self.debug_print(f"  ✓ Found potential abbreviation part")
-                    # Check if current part with previous parts forms an abbreviation
-                    # For example: current='d', prev=['M', '.'] -> 'M.d' -> 'MD'
-                    is_last = i == len(parts) - 1 or all(p in self.WORD_BOUNDARY_CHARS for p in parts[i+1:])
+                if part.isalpha():
+                    # Check for compound abbreviation pattern (e.g. Lt.Col)
+                    if (titled_parts and
+                        prev_part == '.' and
+                        titled_parts[-1] in self.ABBREVIATIONS):
+                        # Check if second part matches an abbreviation
+                        for abbr in self.ABBREVIATIONS:
+                            if part.upper() == abbr.upper():
+                                # Found abbreviation-period-abbreviation pattern
+                                first_abbrev = titled_parts[-1]    # e.g. "Lt"
+                                second_abbrev = abbr              # Use case from ABBREVIATIONS
 
-                    if self._check_abbreviation_with_context(word, titled_parts, is_last):
-                        prev_part = word
+                                # Combine abbreviations (no need to remove period since it wasn't added)
+                                titled_parts[-1] = first_abbrev + second_abbrev
+                                break
+
+                        # Update prev_part to combined abbreviation
+                        prev_part = first_abbrev + second_abbrev
                         prev_was_abbrev = True
+
+                        self.debug_print(f"    ✓ Found compound abbreviation: {first_abbrev!r} + '.' + {second_abbrev!r} -> {titled_parts[-1]!r}")
                         continue
+
+                    # Otherwise check for normal abbreviation
+                    elif titled_parts and prev_part == '.':
+                        self.debug_print(f"  ✓ Found potential abbreviation part")
+                        # Check if current part with previous parts forms an abbreviation
+                        # For example: current='d', prev=['M', '.'] -> 'M.d' -> 'MD'
+                        is_last = i == len(parts) - 1 or all(p in self.WORD_BOUNDARY_CHARS for p in parts[i+1:])
+
+                        if self._check_abbreviation_with_context(word, titled_parts, is_last):
+                            prev_part = word
+                            prev_was_abbrev = True
+                            continue
 
                 # Special case: AM/PM after numbers (including when joined like "9am")
                 if re.match(r'\d+[ap]m\b', word, re.IGNORECASE):

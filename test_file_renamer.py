@@ -18,7 +18,7 @@ from file_renamer import FileRenamer, main  # Import main
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
 
-    def _run_test_cases(self, test_cases, force_fail=True):
+    def _run_test_cases(self, test_cases, force_fail=False):
         """Helper method to run test cases and collect all failures.
 
         Args:
