@@ -154,13 +154,10 @@ class FileRenamer:
     }
 
     # File extensions where we want to preserve the original case of the base name
+    # Only includes extensions that might be included/imported/required by code
     PRESERVE_CASE_EXTENSIONS = {
         # Web
         'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'vue', 'php',
-        # Documentation
-        'md', 'rst', 'log',
-        # Data
-        'json', 'yaml', 'yml', 'xml', 'csv', 'sql',
         # Programming
         'py', 'ipynb', 'java', 'c', 'cpp', 'h', 'hpp',
         'cs', 'go', 'rs', 'rb', 'pl', 'sh', 'bash',
@@ -445,11 +442,20 @@ class FileRenamer:
         r'\d+[mgt][wvajn]\b': lambda s: f"{s[:-2]}{s[-2].upper()}{s[-1].upper()}", # 5mw -> 5MW, 5gw -> 5GW, 5tw -> 5TW
 
         # Digital units (preserve lowercase)
-        r'\d+bit\b': lambda s: f"{s}",  # 24bit -> 24bit
-        r'\d+fps\b': lambda s: f"{s}",  # 30fps -> 30fps
-        r'\d+rpm\b': lambda s: f"{s}",  # 33rpm -> 33rpm
-        r'\d+mph\b': lambda s: f"{s}",  # 60mph -> 60mph
-        r'\d+deg\b': lambda s: f"{s}",  # 68deg -> 68deg
+        r'\d+bit\b': lambda s: f"{s}",  # 24bit
+        r'\d+fps\b': lambda s: f"{s}",  # 30fps
+        r'\d+rpm\b': lambda s: f"{s}",  # 33rpm
+        r'\d+mph\b': lambda s: f"{s}",  # 60mph
+        r'\d+mpg\b': lambda s: f"{s}",  # 35mpg (miles per gallon)
+        r'\d+lkm\b': lambda s: f"{s}",  # 7lkm (liters per kilometer)
+        r'\d+deg\b': lambda s: f"{s}",  # 68deg
+
+        # Ordinal numbers
+        r'\b1[1-9]th\b': lambda s: f"{s.lower()}",  # special cases 11th through 19th
+        r'\b\d*1st\b': lambda s: f"{s.lower()}",    # 1ST -> 1st, 21ST -> 21st, 101ST -> 101st
+        r'\b\d*2nd\b': lambda s: f"{s.lower()}",    # 2ND -> 2nd, 32ND -> 32nd, 442ND -> 442nd
+        r'\b\d*3rd\b': lambda s: f"{s.lower()}",    # 3RD -> 3rd, 43RD -> 43rd, 333RD -> 333rd
+        r'\b\d*[4-9]th\b': lambda s: f"{s.lower()}", # 4TH -> 4th, 75TH -> 75th, 999TH -> 999th
 
         # Temperature units (always uppercase)
         r'\d+k\b': lambda s: f"{s[:-1]}K",   # 5k -> 5K (Kelvin)

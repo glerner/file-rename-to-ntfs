@@ -662,9 +662,16 @@ class TestFileRenamer(unittest.TestCase):
 
             # Technology
             ("100GB ssd vs 2TB hdd.txt", "100GB SSD vs 2TB HDD.txt"),
-            ("100gb gigabit ssd vs 2TB hdd.txt", "100gb Gigabit SSD vs 2TB HDD.txt"),
+            ("100gb gigabit ssd vs 2TB hdd.txt", "100GB Gigabit SSD vs 2TB HDD.txt"),
             ("car going 60mph and spinning at 33rpm at 68deg.txt", "Car Going 60mph and Spinning at 33rpm at 68deg.txt"),
             ("movie at 30fps and 25c.txt", "Movie at 30fps and 25C.txt"),
+            ("car gets 30mpg in city 7lkm highway.txt", "Car Gets 30mpg in City 7lkm Highway.txt"),
+            ("compare 35MPG vs 8LKM fuel usage.txt", "Compare 35MPG vs 8LKM Fuel Usage.txt"),
+            # Ordinal numbers
+            ("1st 2nd 3rd 4th place.txt", "1st 2nd 3rd 4th Place.txt"),
+            ("7th 11th 12th 13th floor.txt", "7th 11th 12th 13th Floor.txt"),
+            ("21st 22nd 23rd 24th century.txt", "21st 22nd 23rd 24th Century.txt"),
+            ("101ST and 102ND and 103RD.txt", "101st and 102nd and 103rd.txt"),
             ("mp3 to mp4 converter.exe", "MP3 to MP4 Converter.exe"),
             ("nvme vs sata ssd speed test.txt", "NVMe vs SATA SSD Speed Test.txt"),
             ("how to setup raid and lan.pdf", "How to Setup RAID and LAN.pdf"),
