@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-File Renamer - Convert filenames from Ext4 to NTFS-compatible format.
+File Renamer - Convert filenames from Ext4 (should also work with OS/X format), to NTFS-compatible format. Use English capitalization and punctuation rules for titles. Replace special characters (including characters illegal in NTFS) with similar Unicode characters.
+
+Ideal for small business professionals seeking efficient file management solutions and enhanced workflow organization.
 
 This script safely renames files to be compatible with NTFS filesystem while preserving
 UTF-8/UTF-16 characters and applying title case formatting rules.
@@ -8,13 +10,13 @@ UTF-8/UTF-16 characters and applying title case formatting rules.
 Note on character encoding:
 - Input filenames must be valid UTF-8 or UTF-16
 - NTFS internally uses UTF-16 LE for filenames
-- Maximum path length is 255 UTF-16 characters
+- Maximum path length on NTFS is 255 UTF-16 characters
 - All replacement characters are validated to be valid UTF-16
 
-Future improvements:
+Future possible improvements:
 - Add option to convert to ASCII-only filenames (if needed for legacy systems)
-  Current implementation preserves UTF-8/UTF-16 which works well with modern systems,
-  including media files from sources like YouTube.
+- Current implementation preserves UTF-8/UTF-16 which works well with modern systems, including media files from sources like YouTube. Consider exploring how to use other character mappings.
+- Designed for English-speaking users. Limited foreign language support currently included, with potential for future enhancements through community contributions.
 
 Author: George Lerner with Cascade AI
 Date: 2025-01-27
@@ -73,6 +75,7 @@ class FileRenamer:
     CHAR_REPLACEMENTS = {
         '\\': '⧵',  # Reverse Solidus Operator
         '/': '⧸',   # Big Solidus (for paths and non-fractions)
+        '／': '⧸',  # Full-width slash replaced with Big Solidus, for readability
         # Commented out fraction mappings - keeping for reference
         # '1/2': '½', # Fraction One Half
         # '1/3': '⅓', # Fraction One Third
@@ -559,6 +562,19 @@ class FileRenamer:
     # Debug mode flag
     _debug_level = get_debug_level()
     _debug = False  # Initialize debug flag for command line use
+
+    @classmethod
+    def colorize(cls, char):
+        """Colorize characters:
+        - Cyan for characters in CHAR_REPLACEMENTS
+        - Green for non-ASCII characters not in CHAR_REPLACEMENTS
+        - no coloring for ASCII characters
+        """
+        if char in cls.CHAR_REPLACEMENTS.values():
+            return f"{Fore.CYAN}{char}{Style.RESET_ALL}"
+        elif ord(char) > 127:  # Non-ASCII character
+            return f"{Fore.GREEN}{char}{Style.RESET_ALL}"
+        return char
 
     @classmethod
     def debug_print(cls, *args, level='normal', **kwargs):
@@ -1407,7 +1423,7 @@ def main():
     if args.dry_run:
         print("\nProposed changes (dry run):")
     else:
-        print("\nExecuted changes:")
+        print("\nExecuted changes: (showing special character replacements in cyan)")
 
     # Track if any files were changed
     any_changes = False
@@ -1416,7 +1432,14 @@ def main():
             print(f"{old}\n  ->  unchanged\n")
         else:
             any_changes = True
-            print(f"{old}\n  -> {new}\n")
+            colored_parts = []
+            for c in new:
+                if any(c == repl for repl in FileRenamer.CHAR_REPLACEMENTS.values()):
+                    colored_parts.append(FileRenamer.colorize(c))
+                else:
+                    colored_parts.append(c)
+            colored_new = ''.join(colored_parts)
+            print(f"{old}\n  -> {colored_new}\n")
 
     if not any_changes:
         print("\nNo files need to be renamed.")
@@ -1424,9 +1447,11 @@ def main():
 
     if not args.dry_run:
         confirm = input("\nApply these changes? [y/N] ")
+        FileRenamer.debug_print("DEBUG: confirm:{confirm} ")
         if confirm.lower() != 'y':
             print("No changes made.")
-            return
+            return  # This prevents further processing
+            FileRenamer.debug_print("DEBUG: confirm:{confirm} This should not be printed if return works")
 
         # Actually rename the files
         for old, new in changes:

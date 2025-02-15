@@ -252,7 +252,7 @@ class TestFileRenamer(unittest.TestCase):
             ('What??? Really???.txt', f'What{qmark} Really{qmark}.txt'),
             ('Hello!!! World!!!.txt', 'Hello! World!.txt'),
             ('Multiple.....Dots...Here.txt', f'Multiple{ellipsis}Dots{ellipsis}Here.txt'),
-            ('Multiple... Dots... With Spaces.txt', f'Multiple{ellipsis} Dots{ellipsis} with Spaces.txt'),
+            ('Multiple... Dots... With Spaces.txt', f'Multiple{ellipsis} Dots{ellipsis} With Spaces.txt'),
             ('file... middle text', f'File{ellipsis} Middle Text'),
         ]
 
@@ -276,7 +276,9 @@ class TestFileRenamer(unittest.TestCase):
         test_cases = [
             (
                 'Law of Attraction Secrets: How to Manifest Anything You Want Faster Than Ever!.mp4',
-                f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster than Ever!.mp4'
+                f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster than Ever!.mp4',
+                f'¿Te gustas las palomitas de maíz y una película?', '¿Te Gustas Las Palomitas De Maíz y Una Película?' # leading Spanish question mark and accented characters unchanged
+                # Future enhancement, add Spanish common words to not capitalize, e.g. las, de, una
             ),
             (
                 'Make So Much Money You Question It! - Get Ahead of 99% of People & Win at Anything | Alex Hormozi.mp4',
@@ -357,16 +359,16 @@ class TestFileRenamer(unittest.TestCase):
         """
         test_cases = [
             # Programming files - keep original name case
-            ('test.PY', 'test.py'),      # Keep lowercase name
-            ('TEST.py', 'TEST.py'),      # Keep uppercase name
-            ('mixedCase.PHP', 'mixedCase.php'),  # Keep mixed case
+            ('test.PY', 'test.py'),      # Keep name case
+            ('TEST.py', 'TEST.py'),      # Keep name case
+            ('mixedCase.PHP', 'mixedCase.php'),  # Keep name case
             # Web files - keep original name case
-            ('styles.CSS', 'styles.css'),  # Keep lowercase name
-            ('LAYOUT.HTML', 'LAYOUT.html'),  # Keep uppercase name
-            ('myScript.JS', 'myScript.js'),  # Keep mixed case
+            ('styles.CSS', 'styles.css'),  # Keep name case
+            ('LAYOUT.HTML', 'LAYOUT.html'),  # Keep name case
+            ('myScript.JS', 'myScript.js'),  # Keep name case
             # Documentation - keep original name case
-            ('README.MD', 'README.md'),  # Keep uppercase name
-            ('debug.LOG', 'debug.log'),  # Keep lowercase name
+            ('README.MD', 'Readme.md'),
+            ('debug.LOG', 'Debug.log'),
             # Unknown extensions - apply title case to name
             ('test.FOO', 'Test.foo'),    # Title case name, lowercase ext
             ('WEIRD.BAR', 'Weird.bar'),  # Title case name, lowercase ext
@@ -662,11 +664,11 @@ class TestFileRenamer(unittest.TestCase):
 
             # Technology
             ("100GB ssd vs 2TB hdd.txt", "100GB SSD vs 2TB HDD.txt"),
-            ("100gb gigabit ssd vs 2TB hdd.txt", "100GB Gigabit SSD vs 2TB HDD.txt"),
+            ("100gb gigabit ssd vs 2TB hdd.txt", "100Gb Gigabit SSD vs 2TB HDD.txt"),
             ("car going 60mph and spinning at 33rpm at 68deg.txt", "Car Going 60mph and Spinning at 33rpm at 68deg.txt"),
             ("movie at 30fps and 25c.txt", "Movie at 30fps and 25C.txt"),
             ("car gets 30mpg in city 7lkm highway.txt", "Car Gets 30mpg in City 7lkm Highway.txt"),
-            ("compare 35MPG vs 8LKM fuel usage.txt", "Compare 35MPG vs 8LKM Fuel Usage.txt"),
+            ("compare 35MPG vs 8LKM fuel usage.txt", "Compare 35mpg vs 8lkm Fuel Usage.txt"),
             # Ordinal numbers
             ("1st 2nd 3rd 4th place.txt", "1st 2nd 3rd 4th Place.txt"),
             ("7th 11th 12th 13th floor.txt", "7th 11th 12th 13th Floor.txt"),

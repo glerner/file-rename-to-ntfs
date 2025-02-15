@@ -5,7 +5,8 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
 ## Features
 
 - Replaces NTFS-incompatible characters with visually similar Unicode alternatives
-- Preserves UTF-8/UTF-16 characters
+- Includes dry-run mode to preview changes
+- Preserves UTF-8/UTF-16 characters (this program doesn't modify them).
 - Applies proper title case formatting with smart word handling:
   - Preserves contractions and possessives (don't, it's, John's)
   - Handles quoted phrases ('This Old House')
@@ -13,10 +14,11 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
   - Common lowercase words (a, an, the, etc.)
   - Preserves common abbreviations (MD, M.D., PG-13, DES, NY)
 - Handles special cases like multiple spaces and trailing punctuation
-- Preserves known file extensions in their original case, but extensions are converted to lowercase
-- Includes dry-run mode to preview changes
+- Preserves file names of known programming language file extensions in their original case, but extensions themselves are always converted to lowercase
 - Debug mode for detailed operation logging
 - Comprehensive test suite
+
+Note that UTF-8 (macOS, Linux) characters convert to different UTF-16 characters (NTFS) depending on the operating system and users's preferred encoding settings.
 
 ## Installation
 
@@ -33,6 +35,8 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
    making it easier to spot where characters have been replaced.
 
 ## Usage
+
+Run in your Terminal. There is no graphical user interface.
 
 Basic usage:
 ```bash
