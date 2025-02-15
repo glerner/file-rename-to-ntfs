@@ -71,12 +71,34 @@ class FileRenamer:
         # '1/8', '3/8', '5/8', '7/8'
     }
 
+    # Can't put apostrophe in CHAR_REPLACEMENTS, since might replace with Single Right Quote or with Full Width Quotation Mark
+    APOSTROPHE_REPLACEMENT = '\u2019'  # Right Single Quote
+
+    QUOTE_LIKE_CHARS = {
+        "'",    # ASCII apostrophe
+        '\u2018',  # Left single quote
+        '\u2019',  # Right single quote
+    }
+
     # Character substitution mappings
     CHAR_REPLACEMENTS = {
-        '\\': '⧵',  # Reverse Solidus Operator
-        '/': '⧸',   # Big Solidus (for paths and non-fractions)
-        '／': '⧸',  # Full-width slash replaced with Big Solidus, for readability
-        # Commented out fraction mappings - keeping for reference
+        '\\': '\u29F5',  # ASCII backslash (has to be escaped) with Reverse Solidus Operator
+        # / U+002F SOLIDUS ⁄ U+2044 FRACTION SLASH ∕ U+2215 DIVISION SLASH ／ U+FF0F FULLWIDTH SOLIDUS
+        '/': '\u2215', # U+2215 DIVISION SLASH
+        '\u2044': '\u2215',  # Fraction slash replaced with Division Slash, for readability
+        '\uFF0F': '\u2215',  # Full-width slash replaced with Division Slash, for readability
+        '"': '\uFF02',   # ASCII double quote replaced with Full-Width Quotation Mark
+        '`': '\uFF02',   # Backtick replaced with Full-Width Quotation Mark
+        '\u2018': '\uFF02',   # Single Left Quote replaced with Full-Width Quotation Mark
+        # don't replace Single Right Quote, since might use Single Right Quote or replace with Full Width Quotation Mark
+        '\u201C': '\uFF02',   # Left double quote replaced with Full-Width Quotation Mark
+        '\u201D': '\uFF02',   # Right double quote replaced with Full-Width Quotation Mark
+        '\u201E': '\uFF02',   # Double Low-9 Quotation Mark replaced with Full Width Quotation Mark
+        '\u201F': '\uFF02',   # Double High-9 Quotation Mark replaced with Full Width Quotation Mark
+        '\u2020': '\uFF02',   # Left Double Angle Quotation Mark replaced with Full Width Quotation Mark
+        '\u2021': '\uFF02',   # Right Double Angle Quotation Mark replaced with Full Width Quotation Mark
+
+        # Commented out fraction mappings - keeping for reference, more common use in filenames is 1of2 than one half
         # '1/2': '½', # Fraction One Half
         # '1/3': '⅓', # Fraction One Third
         # '2/3': '⅔', # Fraction Two Thirds
@@ -95,7 +117,7 @@ class FileRenamer:
         ':': 'ː',   # Modifier Letter Triangular Colon
         '*': '✱',   # Heavy Asterisk
         '?': '⁇',   # Reversed Question Mark
-        '"': '＂',  # Full Width Quotation Mark
+        '"': '\uFF02',  # Full Width Quotation Mark
         '<': '❬',   # Left Black Lenticular Bracket
         '>': '❭',   # Right Black Lenticular Bracket
         '<<': '《',  # Left Double Angle Bracket
@@ -147,7 +169,7 @@ class FileRenamer:
     # Only include special characters that should act as word boundaries
     WORD_BOUNDARY_CHARS = {
         R['\\'], R[':'], R['*'], R['?'], R['|'], R['"'], R['/'],  # Special character replacements
-        '.', ' ', '-', "'",              # Standard word boundaries
+        '.', ' ', '-', "'",              # Standard word boundaries (not yet replacing apostrophe)
         R['<'], R['>'],                  # Angle brackets
         R['...'],                        # Ellipsis
         '(', '[', '{', '<',              # ASCII opening brackets
@@ -1367,28 +1389,6 @@ class FileRenamer:
 
                 changes.append((original_name, new_name))
 
-                if not self.dry_run:
-                    try:
-                        item.rename(self.directory / new_name)
-                    except OSError as e:
-                        if e.errno in (errno.EINVAL, errno.EACCES):
-                            self.debug_print(f"Note: Filesystem does not allow special characters.")
-                            self.debug_print(f"  Original name: '{original_name}'")
-                            self.debug_print(f"  Attempted new name: '{new_name}'")
-                            self.debug_print(f"  Error: {e}")
-                            self.debug_print("This is expected on some filesystems. Proceeding with Unicode replacement...")
-                            # Create a new file with the Unicode replacement directly
-                            try:
-                                # First try to create the new file
-                                (self.directory / new_name).write_bytes(item.read_bytes())
-                                # If successful, remove the old file
-                                item.unlink()
-                            except OSError as e2:
-                                self.debug_print(f"Error: Could not create new file '{new_name}': {e2}")
-                                raise
-                        else:
-                            raise
-
         return changes
 
 def main():
@@ -1447,18 +1447,40 @@ def main():
 
     if not args.dry_run:
         confirm = input("\nApply these changes? [y/N] ")
-        FileRenamer.debug_print("DEBUG: confirm:{confirm} ")
         if confirm.lower() != 'y':
             print("No changes made.")
             return  # This prevents further processing
-            FileRenamer.debug_print("DEBUG: confirm:{confirm} This should not be printed if return works")
+
+        # Display folder information before renaming
+        print(f"Renaming files in folder: {args.directory}")
 
         # Actually rename the files
         for old, new in changes:
-            try:
-                os.rename(old, new)
-            except OSError as e:
-                print(f"Error renaming {old}: {e}")
+            if not args.dry_run:
+                try:
+                    # Use full paths by joining the directory with the filenames
+                    old_path = os.path.join(args.directory, old)
+                    new_path = os.path.join(args.directory, new)
+                    # print(f"Renaming '{old_path}' to '{new_path}'")
+                    os.rename(old_path, new_path)
+                except OSError as e:
+                    if e.errno in (errno.EINVAL, errno.EACCES):
+                        print(f"Note: Filesystem does not allow rename on filename with special characters.")
+                        print(f"  Original name: '{old}'")
+                        print(f"  Attempted new name: '{new}'")
+                        print(f"  Error: {e}")
+                        print("This is expected on some filesystems. \nAttempting making new file and copying contents")
+                        # Create a new file with the Unicode replacement directly
+                        try:
+                            # First try to create the new file
+                            Path(new).write_bytes(Path(old).read_bytes())
+                            # If successful, remove the old file
+                            os.unlink(old)
+                        except OSError as e2:
+                            print(f"Error: Could not create new file '{new}': {e2}")
+                            raise
+                    else:
+                        raise
 
 # Validate replacements when module is loaded
 FileRenamer.validate_replacements()
