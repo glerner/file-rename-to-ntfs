@@ -71,13 +71,19 @@ class FileRenamer:
         # '1/8', '3/8', '5/8', '7/8'
     }
 
-    # Can't put apostrophe in CHAR_REPLACEMENTS, since might replace with Single Right Quote or with Full Width Quotation Mark
-    APOSTROPHE_REPLACEMENT = '\u2019'  # Right Single Quote
+    # Can't put apostrophe in CHAR_REPLACEMENTS, since might replace with Single Right Quote or with Full Width Quotation Mark or Modifier Letter Apostrophe
+    # Unicode characters for quote handling
+    MODIFIER_LETTER_APOSTROPHE = '\u02BC'  # (looks better for contractions)
+    LEFT_SINGLE_QUOTE = '\u2018'       # Left single quote (preserve originals)
+    RIGHT_SINGLE_QUOTE = '\u2019'      # Right single quote (looks better for ending a quotation or phrase)
+    ASCII_APOSTROPHE = "'"             # ASCII apostrophe (will be converted)
+    APOSTROPHE_REPLACEMENT = MODIFIER_LETTER_APOSTROPHE  # Or ASCII_APOSTROPHE if no replacement desired
 
     QUOTE_LIKE_CHARS = {
-        "'",    # ASCII apostrophe
-        '\u2018',  # Left single quote
-        '\u2019',  # Right single quote
+        ASCII_APOSTROPHE,              # Will be converted based on context
+        LEFT_SINGLE_QUOTE,             # Will be preserved
+        RIGHT_SINGLE_QUOTE,            # Will be preserved if from original text
+        APOSTROPHE_REPLACEMENT,        # Used for contractions/possessives
     }
 
     # Character substitution mappings
@@ -89,14 +95,13 @@ class FileRenamer:
         '\uFF0F': '\u2215',  # Full-width slash replaced with Division Slash, for readability
         '"': '\uFF02',   # ASCII double quote replaced with Full-Width Quotation Mark
         '`': '\uFF02',   # Backtick replaced with Full-Width Quotation Mark
-        '\u2018': '\uFF02',   # Single Left Quote replaced with Full-Width Quotation Mark
         # don't replace Single Right Quote, since might use Single Right Quote or replace with Full Width Quotation Mark
         '\u201C': '\uFF02',   # Left double quote replaced with Full-Width Quotation Mark
         '\u201D': '\uFF02',   # Right double quote replaced with Full-Width Quotation Mark
         '\u201E': '\uFF02',   # Double Low-9 Quotation Mark replaced with Full Width Quotation Mark
         '\u201F': '\uFF02',   # Double High-9 Quotation Mark replaced with Full Width Quotation Mark
-        '\u2020': '\uFF02',   # Left Double Angle Quotation Mark replaced with Full Width Quotation Mark
-        '\u2021': '\uFF02',   # Right Double Angle Quotation Mark replaced with Full Width Quotation Mark
+        '\u2039': '\uFF02',   # Single Left-Pointing Angle Quotation Mark replaced with Full Width Quotation Mark
+        '\u203A': '\uFF02',   # Single Right-Pointing Angle Quotation Mark replaced with Full Width Quotation Mark
 
         # Commented out fraction mappings - keeping for reference, more common use in filenames is 1of2 than one half
         # '1/2': '½', # Fraction One Half
@@ -167,9 +172,10 @@ class FileRenamer:
     }
 
     # Only include special characters that should act as word boundaries
+# Only include special characters that should act as word boundaries
     WORD_BOUNDARY_CHARS = {
         R['\\'], R[':'], R['*'], R['?'], R['|'], R['"'], R['/'],  # Special character replacements
-        '.', ' ', '-', "'",              # Standard word boundaries (not yet replacing apostrophe)
+        '.', ' ', '-', "'", '\u02bc',  # Standard word boundaries, including Modifier Letter Apostrophe
         R['<'], R['>'],                  # Angle brackets
         R['...'],                        # Ellipsis
         '(', '[', '{', '<',              # ASCII opening brackets
@@ -301,7 +307,7 @@ class FileRenamer:
         'CHIS', # Chiapas
         'CHIH', # Chihuahua
         'COAH', # Coahuila
-        'COL',  # Colima
+        # 'COL',  # Colima also Col Colonel
         'CDMX', # Ciudad de México
         'DGO',  # Durango
         'GTO',  # Guanajuato
@@ -349,7 +355,7 @@ class FileRenamer:
         '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
 
         # Medical/Scientific
-        'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
+        'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC', 'STEM', # but also flower stem
         'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER',
 
         # Business/Organizations
@@ -359,8 +365,8 @@ class FileRenamer:
         # removed HR (human resources) since conflicts with hr (hour)
 
         # Other Common
-        'ID', 'OK', 'PC', 'PIN', 'PO', 'PS', 'RIP', 'UFO', 'VIP', 'ZIP',
-        'DIY', 'FAQ', 'ASAP', 'IMAX', 'STEM',
+        'ID', 'OK', 'PC', 'PIN', 'PO', 'ps', 'RIP', 'UFO', 'VIP', 'ZIP',
+        'DIY', 'FAQ', 'ASAP', 'IMAX',
 
         # Software/Platforms
         'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL',
@@ -754,6 +760,35 @@ class FileRenamer:
                 return True
         return False
 
+    def final_quote_processing(self, filename):
+        """Process remaining quote-like characters after contraction handling.
+
+        Preserves:
+        - Left single quotes
+        - Modifier Letter Apostrophes from original text or our processing
+
+        Converts to APOSTROPHE_REPLACEMENT:
+        - ASCII apostrophes
+        - Any other quote-like characters (except preserved ones)
+
+        Note: Currently all remaining quotes default to APOSTROPHE_REPLACEMENT for
+        consistent spacing. More sophisticated left/right quote handling may be added later.
+        """
+        # Convert ASCII apostrophes to APOSTROPHE_REPLACEMENT
+        filename = filename.replace(self.ASCII_APOSTROPHE, self.APOSTROPHE_REPLACEMENT)
+
+        # Convert any other quote-like chars (except preserved ones)
+        preserved_chars = {
+            self.LEFT_SINGLE_QUOTE,      # Keep original left quotes
+            self.MODIFIER_LETTER_APOSTROPHE,  # Keep existing apostrophes (original or from contractions)
+        }
+
+        # Any remaining quote-like chars become APOSTROPHE_REPLACEMENT
+        for char in self.QUOTE_LIKE_CHARS - preserved_chars:
+            filename = filename.replace(char, self.APOSTROPHE_REPLACEMENT)
+
+        return filename
+
     def _clean_trailing_chars(self, text: str, debug_prefix: str = '') -> str:
         """Clean trailing special characters from text.
 
@@ -957,9 +992,33 @@ class FileRenamer:
                 word = part.lower()  # First convert to lowercase
                 self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
 
+                # Process parts in this order:
+                # 1. Abbreviation check (e.g. M.D., Lt.Col)
+                # 2. Contraction/possessive check (e.g. CEO's, we'd)
+                # 3. Unit check (e.g. 5kb, 10s)
+                # important since abbreviations and units can be contractions/possessives ("I'd" vs "M. D." vs "5 d" or "John's" vs "10 s"). Contractions/possessives must be immediately preceded by an apostrophe-like character.
+
                 self.debug_print(f"\n⮑ Word: {word!r} (prev={prev_part!r}, contraction={word in self.CONTRACTIONS})")
 
+                # Check for contractions/possessives first (before unit check)
+                if word in self.CONTRACTIONS and len(titled_parts) >= 2:
+                    # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
+                    base_word = titled_parts[-2] if len(titled_parts) >= 2 else ''
+                    if prev_part in self.QUOTE_LIKE_CHARS and not base_word.isspace():
+                        # Remove the previous apostrophe and base word
+                        titled_parts.pop()  # Remove apostrophe
+                        base = titled_parts.pop()  # Remove base word
 
+                        # Add all parts of the contraction back to titled_parts
+                        titled_parts.extend([base, self.APOSTROPHE_REPLACEMENT, word])
+
+                        self.debug_print(f"  Contraction check: {word} (base={base})")
+                        self.debug_print(f"    ✓ Accepted: {base}{self.APOSTROPHE_REPLACEMENT}{word}")
+
+                        # Keep the full contraction as prev_part (like compound abbreviations)
+                        prev_part = f"{base}{self.APOSTROPHE_REPLACEMENT}{word}"
+                        continue
+                    self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
 
                 # Skip empty parts
                 if not word:
@@ -1245,21 +1304,6 @@ class FileRenamer:
                 # Not an abbreviation, let it fall through to normal word handling
                 self.debug_print("  No abbreviation match found")
 
-                # Finally check for contractions
-                if word in self.CONTRACTIONS and len(titled_parts) >= 2:
-                    # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
-                    base_word = titled_parts[-2] if len(titled_parts) >= 2 else ''
-                    full_contraction = f"{base_word}'{word}" if prev_part == "'" and not titled_parts[-2].isspace() else None
-
-                    self.debug_print(f"  Contraction check: {word!r} (base={base_word!r})")
-                    # Check if it follows a word + apostrophe (not space + apostrophe)
-                    if full_contraction:
-                        self.debug_print(f"    ✓ Accepted: {full_contraction!r}")
-                        titled_parts.append(word)
-                        prev_part = full_contraction  # Store the full contraction as prev_part
-                        continue
-                    self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
-
                 # Check if we're between spaces or after punctuation
                 # Word should be lowercase if:
                 # 1. It's in our lowercase word list AND
@@ -1355,6 +1399,9 @@ class FileRenamer:
             result = f"{name}.{extension.lower()}"
         else:
             result = name
+
+        # Process any remaining quotes
+        result = self.final_quote_processing(result)
 
         return result
 

@@ -149,6 +149,7 @@ class TestFileRenamer(unittest.TestCase):
 
     def test_title_case_rules(self):
         """Test title case formatting rules."""
+        APOS = FileRenamer.APOSTROPHE_REPLACEMENT  # For apostrophes
         test_cases = [
             ('THE QUICK BROWN FOX.txt', 'The Quick Brown Fox.txt'),
             ('a tale of two cities.txt', 'A Tale of Two Cities.txt'),
@@ -272,6 +273,7 @@ class TestFileRenamer(unittest.TestCase):
         R = FileRenamer.CHAR_REPLACEMENTS
         colon = R[':']
         pipe = R['|']
+        APOS = FileRenamer.APOSTROPHE_REPLACEMENT  # For apostrophes
 
         test_cases = [
             (
@@ -287,19 +289,19 @@ class TestFileRenamer(unittest.TestCase):
             # Test apostrophe handling
             (
                 "From 'This old ghost' Don's 'stupid'  move.mp4",
-                "From 'This Old Ghost' Don's 'Stupid' Move.mp4"
+                f"From {APOS}This Old Ghost{APOS} Don{APOS}s {APOS}Stupid{APOS} Move.mp4"
             ),
             (
                 "attorney vows to be 'first to sue', didn't check.mp4",
-                "Attorney Vows to be 'First to Sue', Didn't Check.mp4"
+                f"Attorney Vows to be {APOS}First to Sue{APOS}, Didn{APOS}t Check.mp4"
             ),
             (
                 "It's a Wonderful Life - Don't Give Up.mp4",
-                "It's a Wonderful Life - Don't Give Up.mp4"
+                f"It{APOS}s a Wonderful Life - Don{APOS}t Give Up.mp4"
             ),
             (
                 "The Cat's Meow and the Dog's Bark.mp4",
-                "The Cat's Meow and the Dog's Bark.mp4"
+                f"The Cat{APOS}s Meow and the Dog{APOS}s Bark.mp4"
             ),
         ]
 
@@ -574,32 +576,44 @@ class TestFileRenamer(unittest.TestCase):
         3. Special cases (rock'n'roll, 'til, 'cause)
         4. Mixed case with quotes and apostrophes
         """
+        # Get character replacements for test cases
+        APOS = FileRenamer.APOSTROPHE_REPLACEMENT  # For contractions
+        RSQ = FileRenamer.RIGHT_SINGLE_QUOTE    # For quotes around phrases
+
         test_cases = [
             # Basic contractions
-            ("don't give up.txt", "Don't Give Up.txt"),
-            ("it's a wonderful day.txt", "It's a Wonderful Day.txt"),
-            ("we're going home.txt", "We're Going Home.txt"),
-            ("they'll be back.txt", "They'll be Back.txt"),
-            ("i've got it.txt", "I've Got It.txt"),
-            ("you'd better run.txt", "You'd Better Run.txt"),
-            ("i'm feeling good.txt", "I'm Feeling Good.txt"),
+            ("don't give up.txt", f"Don{APOS}t Give Up.txt"),
+            ("it's a wonderful day.txt", f"It{APOS}s a Wonderful Day.txt"),
+            ("we're going home.txt", f"We{APOS}re Going Home.txt"),
+            ("they'll be back.txt", f"They{APOS}ll be Back.txt"),
+            ("i've got it.txt", f"I{APOS}ve Got It.txt"),
+            ("you'd better run.txt", f"You{APOS}d Better Run.txt"),
+            ("i'm feeling good.txt", f"I{APOS}m Feeling Good.txt"),
 
             # Possessives
-            ("john's book.txt", "John's Book.txt"),
-            ("the cat's meow.txt", "The Cat's Meow.txt"),
-            ("james' house.txt", "James' House.txt"),
+
+            ("john's book.txt", f"John{APOS}s Book.txt"),
+            # contractions use MODIFIER_LETTER_APOSTROPHE (ʼ) because it looks better visually in the middle of a word.
+
+            ("james' house.txt", f"James{FileRenamer.RIGHT_SINGLE_QUOTE} House.txt"),
+            # Right single quote (') for closing quotes and standalone apostrophes
+
+            ("the cat's meow.txt", f"The Cat{APOS}s Meow.txt"),
+            # Note: are processing contractions and possessives before units, so John's (possessive) and we'd (contraction) are not mis-detected as s or d (units seconds, days)
 
             # Special cases
-            ("rock'n'roll forever.txt", "Rock'n'Roll Forever.txt"),
-            ("'til death.txt", "'Til Death.txt"),
-            ("'cause i said so.txt", "'Cause I Said So.txt"),
-            ("catch 'em all.txt", "Catch 'Em All.txt"),
+            ("rock'n'roll forever.txt", f"Rock{APOS}n{APOS}Roll Forever.txt"),
+            ("'til death.txt", f"{APOS}Til Death.txt"),
+            ("'cause i said so.txt", f"{APOS}Cause I Said So.txt"),
+            ("catch 'em all.txt", f"Catch {APOS}Em All.txt"),
 
-            # Mixed cases with quotes
-            ("from 'this old ghost' don't move.mp4", "From 'This Old Ghost' Don't Move.mp4"),
-            ("it's a 'wonderful' life we're living.txt", "It's a 'Wonderful' Life We're Living.txt"),
-            ("john's 'great' adventure.txt", "John's 'Great' Adventure.txt"),
-        ]
+            # Mixed cases with quotes - using RIGHT_SINGLE_QUOTE for quotes around phrases
+            ("from 'this old ghost' don't move.mp4", f"From {RSQ}This Old Ghost{RSQ} Don{APOS}t Move.mp4"),
+            ("it's a 'wonderful life' we're living.txt", f"It{APOS}s a {RSQ}Wonderful Life{RSQ} We{APOS}re Living.txt"),
+            ("john's 'great' adventure.txt", f"John{APOS}s {RSQ}Great{RSQ} Adventure.txt"),
+            ("john's 'great adventure'.txt", f"John{APOS}s {RSQ}Great Adventure{RSQ}.txt"),
+            ]
+
 
         self._run_test_cases(test_cases)
 
@@ -831,6 +845,10 @@ class TestFileRenamer(unittest.TestCase):
         2. Abbreviations with units
         3. Units with abbreviations
         """
+        # Get character replacements for test cases
+        APOS = FileRenamer.APOSTROPHE_REPLACEMENT  # For contractions
+        RSQ = FileRenamer.RIGHT_SINGLE_QUOTE    # For quotes around phrases
+
         test_cases = [
             # Mixed abbreviations and units
             ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
@@ -838,7 +856,7 @@ class TestFileRenamer(unittest.TestCase):
             # Mixed cases
             ("dr. smith md in ny on bbc.mp4", "Dr Smith MD in NY on BBC.mp4"),
             ("6pm est fbi report on hbo.txt", "6PM EST FBI Report on HBO.txt"),
-            ("ca-based ceo's irs audit.pdf", "CA-Based CEO's IRS Audit.pdf"),
+            ("ca-based ceo's irs audit.pdf", f"CA-Based CEO{APOS}s IRS Audit.pdf"),
 
             # Unit patterns
             ("5kB file.txt", "5kB File.txt"),
