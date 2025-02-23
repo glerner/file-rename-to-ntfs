@@ -86,13 +86,26 @@ class FileRenamer:
         APOSTROPHE_REPLACEMENT,        # Used for contractions/possessives
     }
 
+    # All forms of slashes to be replaced with full width solidus
+    FULLWIDTH_SOLIDUS_OPERATOR = '\uFF0F'
+    SLASHES = {
+        '\\',           # ASCII backslash
+        '/',           # ASCII forward slash
+        '\u2044',      # FRACTION SLASH
+        '\u2215',      # DIVISION SLASH
+        '\u29F5',  # Better spacing than DIVISION_SLASH
+    }
+    SLASH_REPLACEMENT = FULLWIDTH_SOLIDUS_OPERATOR  # will replace all forward slashes, and ASCII backslash, with Full Width Solidus Operator
+
+    # Date format separators to preserve in date patterns
+    DATE_SEPARATORS = {
+        '.',           # period
+        '-',           # hyphen
+        SLASH_REPLACEMENT,  # for any slash in original
+    }
+
     # Character substitution mappings
     CHAR_REPLACEMENTS = {
-        '\\': '\u29F5',  # ASCII backslash (has to be escaped) with Reverse Solidus Operator
-        # / U+002F SOLIDUS ⁄ U+2044 FRACTION SLASH ∕ U+2215 DIVISION SLASH ／ U+FF0F FULLWIDTH SOLIDUS
-        '/': '\u2215', # U+2215 DIVISION SLASH
-        '\u2044': '\u2215',  # Fraction slash replaced with Division Slash, for readability
-        '\uFF0F': '\u2215',  # Full-width slash replaced with Division Slash, for readability
         '"': '\uFF02',   # ASCII double quote replaced with Full-Width Quotation Mark
         '`': '\uFF02',   # Backtick replaced with Full-Width Quotation Mark
         # don't replace Single Right Quote, since might use Single Right Quote or replace with Full Width Quotation Mark
@@ -137,6 +150,10 @@ class FileRenamer:
         '!': '!',   # Keep exclamation mark but collapse multiples
         '...': '…',  # Replace three or more periods with ellipsis character
     }
+
+    # Add slash replacements after main mappings
+    for slash in SLASHES:
+        CHAR_REPLACEMENTS[slash] = SLASH_REPLACEMENT
 
     # Shorthand for readability
     R = CHAR_REPLACEMENTS
@@ -970,6 +987,9 @@ class FileRenamer:
             prev_part = ''
             prev_was_abbrev = False
             prior_abbreviation = None
+            prior_date_part = None  # Track date parts like prior_abbreviation
+            processed_parts = {}  # Track how each part was processed
+
             last_real_word = None
             for part in parts:
                 if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
@@ -1027,8 +1047,16 @@ class FileRenamer:
                 # Keep separators as is
                 if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
                     # Skip adding period if it follows an abbreviation or compound
-                    if part == '.' and ((titled_parts and titled_parts[-1] in self.ABBREVIATIONS) or prior_abbreviation):
-                        self.debug_print(f"Skipping period after abbreviation: {prior_abbreviation or titled_parts[-1]!r}")
+                    if part == '.' and ((titled_parts and titled_parts[-1].upper() in self.ABBREVIATIONS) or prior_abbreviation or
+                                      (titled_parts and (titled_parts[-1].upper() in self.MONTH_FORMATS or prior_date_part))):
+                        self.debug_print(f"  ⮑ Period handling state for date patterns:")
+                        self.debug_print(f"    Current part: {part!r} (prev={prev_part!r})")
+                        self.debug_print(f"    Titled parts so far: {titled_parts}")
+                        self.debug_print(f"    Last titled part: {titled_parts[-1]!r}")
+                        self.debug_print(f"    Prior date part: {prior_date_part}")
+                        self.debug_print(f"    Prior abbreviation: {prior_abbreviation}")
+                        self.debug_print(f"    Is month format: {titled_parts[-1] in self.MONTH_FORMATS}")
+                        self.debug_print(f"    Skipping period: reason={'month format' if titled_parts[-1] in self.MONTH_FORMATS else 'prior date part' if prior_date_part else 'abbreviation' if prior_abbreviation else 'unknown'}")
                         prev_part = part
                         continue
 
@@ -1296,6 +1324,16 @@ class FileRenamer:
                         prev_part = found_abbrev  # Keep the full abbreviation as previous part
                         prev_was_abbrev = True  # Mark that we found a valid abbreviation
                     else:
+                        # Check if we're in a date pattern (number.month)
+                        self.debug_print(f"  checking for date pattern: {titled_parts}, Found Abbrev: {found_abbrev}, PrevPart: {prev_part}, PriorDatePart:{prior_date_part} ")
+                        if (titled_parts and
+                            prev_part == '.' and
+                            len(titled_parts) >= 2 and
+                            titled_parts[-2].isdigit() and
+                            found_abbrev.upper() in self.MONTH_FORMATS):
+                            prior_date_part = True
+                            self.debug_print(f"  Found date pattern: {titled_parts[-2]}.{found_abbrev}")
+
                         titled_parts.append(found_abbrev)
                         prev_part = found_abbrev  # Keep the full abbreviation as previous part
                         prev_was_abbrev = True  # Mark that we found a valid abbreviation

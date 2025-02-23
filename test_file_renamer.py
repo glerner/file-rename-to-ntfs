@@ -17,8 +17,13 @@ from file_renamer import FileRenamer, main  # Import main
 
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
+    force_fail = True # Set to True to force failures, False to disable
 
-    def _run_test_cases(self, test_cases, force_fail=False):
+    def _run_test_cases(self, test_cases, force_fail=None):
+        if force_fail is None:
+            force_fail = self.force_fail
+        print(f"\n=== Running test cases for {self._testMethodName} ===")
+
         """Helper method to run test cases and collect all failures.
 
         Args:
@@ -74,11 +79,10 @@ class TestFileRenamer(unittest.TestCase):
                     print(f"Expected: {highlight_special_chars(expected)}")
                 print(f"{'='*50}\n")
 
-                if result_no_fail != expected_no_fail:
+                if result != expected:
                     failures.append({
                         'input': original,
-                        'expected': expected,
-                        'got': result
+                        'error': f"{expected!r}"
                     })
             except Exception as e:
                 failures.append({
@@ -279,8 +283,11 @@ class TestFileRenamer(unittest.TestCase):
             (
                 'Law of Attraction Secrets: How to Manifest Anything You Want Faster Than Ever!.mp4',
                 f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster than Ever!.mp4',
-                f'¿Te gustas las palomitas de maíz y una película?', '¿Te Gustas Las Palomitas De Maíz y Una Película?' # leading Spanish question mark and accented characters unchanged
+            ),
+            (
+                '¿Te gustas las palomitas de maíz y una película?', '¿Te Gustas Las Palomitas De Maíz y Una Película?' # leading Spanish question mark and accented characters unchanged
                 # Future enhancement, add Spanish common words to not capitalize, e.g. las, de, una
+
             ),
             (
                 'Make So Much Money You Question It! - Get Ahead of 99% of People & Win at Anything | Alex Hormozi.mp4',
@@ -595,7 +602,7 @@ class TestFileRenamer(unittest.TestCase):
             ("john's book.txt", f"John{APOS}s Book.txt"),
             # contractions use MODIFIER_LETTER_APOSTROPHE (ʼ) because it looks better visually in the middle of a word.
 
-            ("james' house.txt", f"James{FileRenamer.RIGHT_SINGLE_QUOTE} House.txt"),
+            ("james' house.txt", f"James{APOS} House.txt"),
             # Right single quote (') for closing quotes and standalone apostrophes
 
             ("the cat's meow.txt", f"The Cat{APOS}s Meow.txt"),
@@ -608,10 +615,10 @@ class TestFileRenamer(unittest.TestCase):
             ("catch 'em all.txt", f"Catch {APOS}Em All.txt"),
 
             # Mixed cases with quotes - using RIGHT_SINGLE_QUOTE for quotes around phrases
-            ("from 'this old ghost' don't move.mp4", f"From {RSQ}This Old Ghost{RSQ} Don{APOS}t Move.mp4"),
-            ("it's a 'wonderful life' we're living.txt", f"It{APOS}s a {RSQ}Wonderful Life{RSQ} We{APOS}re Living.txt"),
-            ("john's 'great' adventure.txt", f"John{APOS}s {RSQ}Great{RSQ} Adventure.txt"),
-            ("john's 'great adventure'.txt", f"John{APOS}s {RSQ}Great Adventure{RSQ}.txt"),
+            ("from 'this old ghost' don't move.mp4", f"From {APOS}This Old Ghost{APOS} Don{APOS}t Move.mp4"),
+            ("it's a 'wonderful life' we're living.txt", f"It{APOS}s a {APOS}Wonderful Life{APOS} We{APOS}re Living.txt"),
+            ("john's 'great' adventure.txt", f"John{APOS}s {APOS}Great{APOS} Adventure.txt"),
+            ("john's 'great adventure'.txt", f"John{APOS}s {APOS}Great Adventure{APOS}.txt"),
             ]
 
 
@@ -826,13 +833,6 @@ class TestFileRenamer(unittest.TestCase):
             ("payments/mo summary.xlsx", f"Payments{R['/']}mo Summary.xlsx"),
             ("growth/yr analysis.doc", f"Growth{R['/']}yr Analysis.doc"),
 
-            # Date formats with month abbreviations
-            ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),
-            ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),
-            ("12jan2025 report.pdf", "12Jan2025 Report.pdf"),
-            ("jan2025 report.pdf", "Jan2025 Report.pdf"),
-            ("2025-jan report.pdf", "2025-Jan Report.pdf"),
-            ("25jan report.pdf", "25Jan Report.pdf"),
         ]
 
         self._run_test_cases(test_cases)
@@ -913,7 +913,7 @@ class TestFileRenamer(unittest.TestCase):
         3. Various date formats
         """
         R = FileRenamer.CHAR_REPLACEMENTS
-        fslash = R['/']  # forward slash replacement
+        slash = R['/']  # slash (many kinds) replacement
 
         test_cases = [
             # Numbers followed by words
@@ -929,12 +929,18 @@ class TestFileRenamer(unittest.TestCase):
             ("10great ideas.doc", "10Great Ideas.doc"),  # Not 10g
 
             # Date formats (testing different styles and separators)
+            ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),
+            ("jan2025 report.pdf", "Jan2025 Report.pdf"),
+            ("2025-jan report.pdf", "2025-Jan Report.pdf"),
+            ("25jan report.pdf", "25Jan Report.pdf"),
+
             ("12jan2025 report.pdf", "12Jan2025 Report.pdf"),  # DMY no separator
+            ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),  # YMD with hyphens
             ("12-jan-2025 report.pdf", "12-Jan-2025 Report.pdf"),  # DMY with hyphens
             ("12.jan.2025 report.pdf", "12.Jan.2025 Report.pdf"),  # DMY with dots
             # Note: Forward slashes in dates currently use the replacement character.
             # TODO: Consider enhancing to detect valid dates and use dashes instead.
-            ("12/jan/2025 report.pdf", f"12{fslash}Jan{fslash}2025 Report.pdf"),  # DMY with slashes->replacement
+            ("12/jan/2025 report.pdf", f"12{slash}Jan{slash}2025 Report.pdf"),  # DMY with slashes
             ("2025jan12 report.pdf", "2025Jan12 Report.pdf"),  # YMD no separator
             ("jan12-2025 report.pdf", "Jan12-2025 Report.pdf"),  # MDY with partial hyphens
             ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),  # DMY with 2-digit year
