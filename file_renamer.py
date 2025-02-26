@@ -199,6 +199,7 @@ class FileRenamer:
         ')', ']', '}', '>',              # ASCII closing brackets
         R['<'], R['<<'], R['[['], R['{{'],  # Replacement opening brackets
         R['>'], R['>>'], R[']]'], R['}}'],  # Replacement closing brackets
+        '¿', '¡',                    # Spanish inverted punctuation marks
     }
 
     # File extensions where we want to preserve the original case of the base name
@@ -295,11 +296,12 @@ class FileRenamer:
         'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC',
 
         # US States (excluding those that conflict with common words)
-        'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL',
+        'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'FL',
         'GA', 'HI', 'ID', 'IL', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI',
         'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV',
         'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
         'VA', 'VT', 'WA', 'WI', 'WV', 'WY',
+        # 'DE' Delaware conflicts with common Spanish word 'de'
 
         # Canadian Provinces (excluding ON, a lowercase word)
         'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'QC', 'SK', 'YT',
@@ -591,7 +593,12 @@ class FileRenamer:
         'part', 'vol', 'feat', 'ft', 'remix',
 
         # Be Verbs (when not first/last)
-        'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'
+        'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being',
+
+        # Spanish
+        'de', 'las', 'los', 'la', 'el', 'una', 'unas', 'unos',
+        'y', 'con', 'por', 'a', 'del', 'lo', 'que', 'su',
+        'para'
     }
 
     # Characters that trigger capitalization of the next word
@@ -601,6 +608,8 @@ class FileRenamer:
         R['...'],  # Ellipsis
         R[':'],    # Colon
         R['|'],    # Pipe/Vertical bar
+        '¿',   # Spanish inverted question mark
+        '¡',   # Spanish inverted exclamation mark
         *OPENING_BRACKETS  # All opening brackets
     }
 
@@ -902,7 +911,7 @@ class FileRenamer:
         # self.debug_print(f"After whitespace normalization:  {name!r}\n", level='detail')
 
         # Replace special characters
-        self.debug_print(f"Before replacements: {name!r}", level='normal')
+        # self.debug_print(f"Before replacements: {name!r}", level='normal')
 
         # Function to colorize replacement chars
         def colorize(char):
@@ -938,7 +947,7 @@ class FileRenamer:
                 colored_parts.append(c)
         colored_name = ''.join(colored_parts)
         # Don't use !r here as it escapes the color codes
-        self.debug_print(f"After replacements: '{colored_name}'", level='normal')
+        # self.debug_print(f"After replacements: '{colored_name}'", level='normal')
 
         # Clean up whitespace
         name = name.strip()
@@ -972,7 +981,7 @@ class FileRenamer:
         if not extension.lower() in self.PRESERVE_CASE_EXTENSIONS:
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
-            self.debug_print(f"\nSplit pattern: {split_pattern}")
+            # self.debug_print(f"Split pattern: {split_pattern}")
 
             # First do a quick validation of how many parts we might get
             test_parts = re.split(split_pattern, name)
@@ -980,8 +989,8 @@ class FileRenamer:
                 self.debug_print(f"Filename too complex: {len(test_parts)} parts exceeds limit of 200")
                 return name  # Return original name if too complex
 
-            parts = test_parts
-            self.debug_print(f"Parts after split: {parts!r}\n")
+            # Filter out empty parts
+            parts = [p for p in test_parts if p != '']
 
             titled_parts = []
             prev_part = ''
@@ -1003,14 +1012,14 @@ class FileRenamer:
                 if i in processed_parts:
                     self.debug_print(f"\n[SKIP] Part {i}: {part!r} ({processed_parts[i]})")
                     continue
-                if not part:  # Skip empty parts
-                    continue
+                # if not part:  # Skip empty parts (handled above)
+                #     continue
 
                 self.debug_print(f"\nProcessing part {i}: {part!r} (len={len(part)}, has_boundary={[c for c in part if c in self.WORD_BOUNDARY_CHARS]})")
 
                 # Convert to title case, handling special cases
                 word = part.lower()  # First convert to lowercase
-                self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
+                # self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
 
                 # Process parts in this order:
                 # 1. Abbreviation check (e.g. M.D., Lt.Col)
@@ -1018,8 +1027,7 @@ class FileRenamer:
                 # 3. Unit check (e.g. 5kb, 10s)
                 # important since abbreviations and units can be contractions/possessives ("I'd" vs "M. D." vs "5 d" or "John's" vs "10 s"). Contractions/possessives must be immediately preceded by an apostrophe-like character.
 
-                self.debug_print(f"\n⮑ Word: {word!r} (prev={prev_part!r}, contraction={word in self.CONTRACTIONS})")
-
+                self.debug_print(f"⮑ Word: {word!r} (prev={prev_part!r}, Found Abbrev: {titled_parts[-1] if titled_parts and titled_parts[-1] in self.ABBREVIATIONS else None}, PrevPart: {prev_part}, PriorDatePart:{prior_date_part})")
                 # Check for contractions/possessives first (before unit check)
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
                     # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
@@ -1038,29 +1046,31 @@ class FileRenamer:
                         # Keep the full contraction as prev_part (like compound abbreviations)
                         prev_part = f"{base}{self.APOSTROPHE_REPLACEMENT}{word}"
                         continue
-                    self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
+                    # self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
 
                 # Skip empty parts
-                if not word:
+                # if not word:
+                #     continue
+
+                # Handle periods after abbreviations or dates
+                if part == '.' and (prior_abbreviation or prior_date_part):
+                    self.debug_print(f"  ⮑ Period handling state:    Current part: {part!r} (prev={prev_part!r})")
+                    self.debug_print(f"    Prior state: abbrev={prior_abbreviation}, date={prior_date_part}")
+                    self.debug_print(f"    Titled parts so far: {titled_parts}")
+                    self.debug_print(f"    Last titled part: {titled_parts[-1]!r}")
+                    self.debug_print(f"    Next parts: {parts[i+1:i+3]!r}")
+                    self.debug_print(f"    Is month format: {titled_parts[-1] in self.MONTH_FORMATS}")
+                    self.debug_print(f"    Skipping period: reason={'month format' if titled_parts[-1] in self.MONTH_FORMATS else 'prior date part' if prior_date_part else 'abbreviation' if prior_abbreviation else 'unknown'}")
+                    # If we already added this period, remove it since it follows an abbreviation
+                    if titled_parts and titled_parts[-1] == '.':
+                        titled_parts.pop()
+                        self.debug_print(f"    Removed period from titled_parts")
+                    prev_part = part
                     continue
 
-                # Keep separators as is
+                # Handle other word boundary characters
                 if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
-                    # Skip adding period if it follows an abbreviation or compound
-                    if part == '.' and ((titled_parts and titled_parts[-1].upper() in self.ABBREVIATIONS) or prior_abbreviation or
-                                      (titled_parts and (titled_parts[-1].upper() in self.MONTH_FORMATS or prior_date_part))):
-                        self.debug_print(f"  ⮑ Period handling state for date patterns:")
-                        self.debug_print(f"    Current part: {part!r} (prev={prev_part!r})")
-                        self.debug_print(f"    Titled parts so far: {titled_parts}")
-                        self.debug_print(f"    Last titled part: {titled_parts[-1]!r}")
-                        self.debug_print(f"    Prior date part: {prior_date_part}")
-                        self.debug_print(f"    Prior abbreviation: {prior_abbreviation}")
-                        self.debug_print(f"    Is month format: {titled_parts[-1] in self.MONTH_FORMATS}")
-                        self.debug_print(f"    Skipping period: reason={'month format' if titled_parts[-1] in self.MONTH_FORMATS else 'prior date part' if prior_date_part else 'abbreviation' if prior_abbreviation else 'unknown'}")
-                        prev_part = part
-                        continue
-
-                    self.debug_print(f"Keeping separator: {part!r}")
+                    # self.debug_print(f"Keeping separator: {part!r}")
                     titled_parts.append(part)
                     prev_part = part
                     # Only reset prev_was_abbrev for spaces and periods
@@ -1076,17 +1086,19 @@ class FileRenamer:
                 # Debug abbreviation check
                 self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
                 if titled_parts:
-                    self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}")
-                    self.debug_print(f"    all titled_parts={titled_parts!r}")
+                    self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
 
                 if part.isalpha():
-                    # Check for compound abbreviation pattern (e.g. Lt.Col)
+                    # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
+                    # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
+                    self.debug_print(f"  Compound pattern check:    titled_parts={titled_parts!r}    prev_part={prev_part!r}    current_part={part!r}    prev_is_period={prev_part == '.'}")
+                    if titled_parts:
+                        self.debug_print(f"    last_part={titled_parts[-1]!r}    is_abbrev={titled_parts[-1] in self.ABBREVIATIONS}    is_number={titled_parts[-1].isdigit()}    is_month={part.upper() in self.MONTH_FORMATS}")
                     if (titled_parts and
                         prev_part == '.' and
-                        titled_parts[-1] in self.ABBREVIATIONS):
-                        self.debug_print(f"  Compound check state:")
-                        self.debug_print(f"    part={part!r}")
-                        self.debug_print(f"    prev_part={prev_part!r}")
+                        (titled_parts[-1] in self.ABBREVIATIONS or
+                         (titled_parts[-1].isdigit() and part.upper() in self.MONTH_FORMATS.upper()))):
+                        self.debug_print(f"  ✓ Found compound pattern match")
                         self.debug_print(f"    titled_parts={titled_parts!r}")
 
                         # Get first abbreviation before loop
@@ -1187,8 +1199,7 @@ class FileRenamer:
                             j = i + 2
                             self.debug_print(f"  Found space-separated unit: {unit_parts!r}")
 
-                    self.debug_print(f"  Testing unit pattern: {test_word!r}")
-                    self.debug_print(f"  Original parts: {original_parts!r}")
+                    self.debug_print(f"  Testing unit pattern: {test_word!r}  Original parts: {original_parts!r}")
 
                     # Try to match unit patterns
                     for pattern, formatter in sorted(self.UNIT_PATTERNS.items(), key=lambda x: len(x[0]), reverse=True):

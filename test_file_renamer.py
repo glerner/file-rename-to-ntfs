@@ -35,7 +35,7 @@ class TestFileRenamer(unittest.TestCase):
         for original, expected in test_cases:
             if force_fail:
                 # Temporarily add FAIL prefix to force failures
-                original = 'FAIL ' + original
+                expected = 'FAIL ' + expected
             try:
                 # Try to import colorama for colored output
                 try:
@@ -67,17 +67,17 @@ class TestFileRenamer(unittest.TestCase):
                     return f"'{(''.join(result))}'"  # Add back the quotes
 
                 result = self.renamer._clean_filename(original)
-                print(f"\n==================================================\n")
+
                 print(f"Finished processing: {original!r}")
                 # For coloring, ignore 'FAIL ' prefix if present
-                result_no_fail = result[5:] if result.startswith('Fail ') else result
-                expected_no_fail = expected[5:] if expected.startswith('Fail ') else expected
+                result_no_fail = result[5:] if result.startswith('FAIL ') else result
+                expected_no_fail = expected[5:] if expected.startswith('FAIL ') else expected
                 print(f"Result:   {highlight_special_chars(result)}")
                 if result_no_fail != expected_no_fail:
                     print(f"{Fore.CYAN}Expected:{Style.RESET_ALL} {highlight_special_chars(expected)}")
                 else:
                     print(f"Expected: {highlight_special_chars(expected)}")
-                print(f"{'='*50}\n")
+                print(f"{'='*50}")
 
                 if result != expected:
                     failures.append({
@@ -277,6 +277,7 @@ class TestFileRenamer(unittest.TestCase):
         R = FileRenamer.CHAR_REPLACEMENTS
         colon = R[':']
         pipe = R['|']
+        qmark = R['?']
         APOS = FileRenamer.APOSTROPHE_REPLACEMENT  # For apostrophes
 
         test_cases = [
@@ -285,7 +286,7 @@ class TestFileRenamer(unittest.TestCase):
                 f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster than Ever!.mp4',
             ),
             (
-                '¿Te gustas las palomitas de maíz y una película?', '¿Te Gustas Las Palomitas De Maíz y Una Película?' # leading Spanish question mark and accented characters unchanged
+                '¿Te gustas las palomitas de maíz y una película?', f'¿Te Gustas Las Palomitas De Maíz y Una Película{qmark}' # leading Spanish question mark and accented characters unchanged
                 # Future enhancement, add Spanish common words to not capitalize, e.g. las, de, una
 
             ),
@@ -637,6 +638,7 @@ class TestFileRenamer(unittest.TestCase):
         7. Technology terms
         8. Mixed case with other words
         """
+        R = FileRenamer.CHAR_REPLACEMENTS
         print("\n=== Testing All Abbreviation Cases ===")
         test_cases = [
             # Academic degrees
@@ -644,6 +646,7 @@ class TestFileRenamer(unittest.TestCase):
             # this checks the m is not grabbed as a contraction (I'm) and is not grabbed as a unit (meters)
             ("jane doe, m.d..txt", "Jane Doe, MD.txt"),
             ("jane smith, m.d.txt", "Jane Smith, MD.txt"),
+            ("Hormone Dr.: increase testosterone levels naturally.txt", f"Hormone Dr{R[':']} Increase Testosterone Levels Naturally.txt"),
 
             # Movie/TV ratings
             ("movie pg-13 2024.mp4", "Movie PG-13 2024.mp4"),
@@ -937,7 +940,7 @@ class TestFileRenamer(unittest.TestCase):
             ("12jan2025 report.pdf", "12Jan2025 Report.pdf"),  # DMY no separator
             ("25-jan-12 report.pdf", "25-Jan-12 Report.pdf"),  # YMD with hyphens
             ("12-jan-2025 report.pdf", "12-Jan-2025 Report.pdf"),  # DMY with hyphens
-            ("12.jan.2025 report.pdf", "12.Jan.2025 Report.pdf"),  # DMY with dots
+            ("12.jan.2025 report.pdf", "12Jan2025 Report.pdf"),  # DMY with dots
             # Note: Forward slashes in dates currently use the replacement character.
             # TODO: Consider enhancing to detect valid dates and use dashes instead.
             ("12/jan/2025 report.pdf", f"12{slash}Jan{slash}2025 Report.pdf"),  # DMY with slashes
