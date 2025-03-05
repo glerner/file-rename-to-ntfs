@@ -276,34 +276,117 @@ class FileRenamer:
         This preprocessing step handles abbreviations with periods before
         the text is split into tokens for further processing.
         """
-        # Pattern for letter-based abbreviations with periods
-        # This handles patterns like "M.D." or "Ph.D."
-        pattern = r'(?:^|(?<=\W))([A-Za-z](?:\.[A-Za-z])+\.?)(?=\W|$)'
+        self.debug_print(f"\n[ABBREV] Processing text: {text!r}", level='verbose')
+
+        self.debug_print(f"[ABBREV] All ABBREVIATIONS: {sorted(list(self.ABBREVIATIONS))}", level='verbose')
+
+        # Patterns for letter-based abbreviations with periods
+        # We'll use multiple patterns to handle different cases
+
+        # Pattern 1: Multi-letter abbreviations with periods (M.D., Ph.D.)
+        pattern1 = r'(?:^|(?<=\W))([A-Za-z](?:\.[A-Za-z])+\.?)(?=\W|$)'
+
+        # Test pattern1 on the input text
+        import re
+        pattern1_matches = list(re.finditer(pattern1, text, flags=re.IGNORECASE))
+        if pattern1_matches:
+            self.debug_print(f"[ABBREV] Pattern1 matches ({len(pattern1_matches)}):", level='verbose')
+            for i, match in enumerate(pattern1_matches):
+                self.debug_print(f"  Match {i+1}: '{match.group(1)}' at position {match.start()}-{match.end()}", level='verbose')
+        else:
+            self.debug_print(f"[ABBREV] Pattern1: No matches found", level='verbose')
+
+        # Pattern 2: Single-word abbreviations with trailing period (Dr., Sgt., FDR., JFK.)
+        pattern2 = r'(?:^|(?<=\W))([A-Za-z]{1,5}\.)(?=\s|$)'
+
+        # Test pattern2 on the input text
+        pattern2_matches = list(re.finditer(pattern2, text, flags=re.IGNORECASE))
+        if pattern2_matches:
+            self.debug_print(f"[ABBREV] Pattern2 matches ({len(pattern2_matches)}):", level='verbose')
+            for i, match in enumerate(pattern2_matches):
+                self.debug_print(f"  Match {i+1}: '{match.group(1)}' at position {match.start()}-{match.end()}", level='verbose')
+        else:
+            self.debug_print(f"[ABBREV] Pattern2: No matches found", level='verbose')
+
+        # Let's also test with a modified pattern2 to see if we can identify why it's not matching
+        test_patterns = [
+            r'([A-Za-z]{1,5}\.)',  # Simplest form - just letters followed by period
+            r'(?:^|\s)([A-Za-z]{1,5}\.)(?=\s|$)',  # Only match at beginning or after space
+            r'\b([A-Za-z]{1,5}\.)\b'  # Word boundary version
+        ]
+
+        for i, test_pattern in enumerate(test_patterns):
+            test_matches = list(re.finditer(test_pattern, text, flags=re.IGNORECASE))
+            if test_matches:
+                self.debug_print(f"[ABBREV] Test pattern {i+1} matches ({len(test_matches)}):", level='verbose')
+                for j, match in enumerate(test_matches):
+                    self.debug_print(f"  Match {j+1}: '{match.group(1)}' at position {match.start()}-{match.end()}", level='verbose')
+            else:
+                self.debug_print(f"[ABBREV] Test pattern {i+1}: No matches found", level='verbose')
+
+        # Combined pattern
+        pattern = f'{pattern1}|{pattern2}'
 
         def replace_abbr(match):
             abbr_with_periods = match.group(1)
+            self.debug_print(f"[ABBREV] Found match: {abbr_with_periods!r}", level='verbose')
+
+            # Check if this is a single-word abbreviation with trailing period (Dr., Sgt.)
+            if abbr_with_periods.count('.') == 1 and abbr_with_periods.endswith('.'):
+                # Remove the trailing period
+                abbr_without_periods = abbr_with_periods[:-1]
+                self.debug_print(f"[ABBREV] Single-word with period: {abbr_with_periods!r} -> {abbr_without_periods!r}", level='verbose')
+
+                # Check if it's in ABBREVIATIONS
+                for abbr in self.ABBREVIATIONS:
+                    if abbr.upper() == abbr_without_periods.upper():
+                        self.debug_print(f"[ABBREV] Found in ABBREVIATIONS: {abbr_without_periods!r} -> {abbr!r}", level='verbose')
+                        return abbr
+
+                # If not found in ABBREVIATIONS but is 1-3 letters and uppercase, treat as abbreviation and remove periods
+                if len(abbr_without_periods) <= 3 and abbr_without_periods.isupper():
+                    self.debug_print(f"[ABBREV] 1-3 letter uppercase: {abbr_without_periods!r}", level='verbose')
+                    return abbr_without_periods
+
+                # Otherwise return original
+                self.debug_print(f"[ABBREV] Not an abbreviation, returning original: {abbr_with_periods!r}", level='verbose')
+                return abbr_with_periods
+
+            # For multi-letter abbreviations with periods (M.D., Ph.D.)
             # Remove all periods
             abbr_without_periods = abbr_with_periods.replace('.', '')
 
-            # Only process if it looks like a real abbreviation:
+            # Split into parts
             parts = abbr_with_periods.split('.')
             parts = [p for p in parts if p]  # Remove empty parts
 
-            # Check if the combined parts (without periods) form a known abbreviation
+            # Check if the combined parts form a known abbreviation
             combined = ''.join(parts)
-            # Only remove periods if the combined form is a known abbreviation
-            if combined in self.ABBREVIATIONS:
-                return abbr_without_periods
+
+            # Only remove periods if the combined form is a known abbreviation (case-insensitive)
+            for abbr in self.ABBREVIATIONS:
+                if abbr.upper() == combined.upper():
+                    # Return the abbreviation in the case as defined in ABBREVIATIONS
+                    return abbr
+
             # For single-letter sequences, only remove periods if all uppercase
             # "Each and E.V.E.R.Y Time" --> "Each and EVERY Time"
-            elif all(len(part) == 1 for part in parts) and all(part.isupper() for part in parts):
+            if all(len(part) == 1 for part in parts) and all(part.isupper() for part in parts):
                 return abbr_without_periods
 
             # Otherwise, return the original text
             return abbr_with_periods
 
-        # Replace all matches
-        return re.sub(pattern, replace_abbr, text)
+        # Replace all matches (case-insensitive)
+        result = re.sub(pattern, replace_abbr, text, flags=re.IGNORECASE)
+
+        # Show if any changes were made
+        if result != text:
+            self.debug_print(f"[ABBREV] Changed: {text!r} -> {result!r}", level='verbose')
+        else:
+            self.debug_print(f"[ABBREV] No changes made to text", level='verbose')
+
+        return result
 
     def _clean_date_patterns_with_periods(self, text):
         """
@@ -1431,6 +1514,11 @@ class FileRenamer:
                             found_abbrev = abbr
                             abbrev_debug = f"✓ {found_abbrev!r} (no periods)"
                             break
+
+                # If no match but it's 1-3 letters and all uppercase, treat as abbreviation (e.g. initials FDR, JFK)
+                if not found_abbrev and len(test_word) <= 3 and test_word.isupper():
+                    found_abbrev = test_word
+                    abbrev_debug = f"✓ {found_abbrev!r} (uppercase 1-3 letters)"
 
                 # If at end of text and no match, try with trailing period
                 if not found_abbrev and j >= len(parts) - 1:
