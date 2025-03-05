@@ -268,6 +268,117 @@ class FileRenamer:
         # Remove periods and whitespace
         return re.sub(r'\.', '', abbr.strip())
 
+    def _clean_common_abbreviation_patterns(self, text):
+        """
+        Detect and clean common abbreviation patterns with periods.
+        Examples: "M.D.", "Ph.D.", "Lt.Col."
+
+        This preprocessing step handles abbreviations with periods before
+        the text is split into tokens for further processing.
+        """
+        # Pattern for letter-based abbreviations with periods
+        # This handles patterns like "M.D." or "Ph.D."
+        pattern = r'(?:^|(?<=\W))([A-Za-z](?:\.[A-Za-z])+\.?)(?=\W|$)'
+
+        def replace_abbr(match):
+            abbr_with_periods = match.group(1)
+            # Remove all periods
+            abbr_without_periods = abbr_with_periods.replace('.', '')
+
+            # Only process if it looks like a real abbreviation:
+            parts = abbr_with_periods.split('.')
+            parts = [p for p in parts if p]  # Remove empty parts
+
+            # Check if the combined parts (without periods) form a known abbreviation
+            combined = ''.join(parts)
+            # Only remove periods if the combined form is a known abbreviation
+            if combined in self.ABBREVIATIONS:
+                return abbr_without_periods
+            # For single-letter sequences, only remove periods if all uppercase
+            # "Each and E.V.E.R.Y Time" --> "Each and EVERY Time"
+            elif all(len(part) == 1 for part in parts) and all(part.isupper() for part in parts):
+                return abbr_without_periods
+
+            # Otherwise, return the original text
+            return abbr_with_periods
+
+        # Replace all matches
+        return re.sub(pattern, replace_abbr, text)
+
+    def _clean_date_patterns_with_periods(self, text):
+        """
+        Detect and clean date patterns with periods.
+        Examples: "12.Jan.2025", "Jan.2025", "12.Jan", "2025.Jan", "Jan.12.2025", "2025.12.Jan"
+
+        This preprocessing step handles date patterns with periods before
+        the text is split into tokens for further processing.
+        """
+        # Pattern 1: number.month.number (12.Jan.2025)
+        pattern1 = r'\b(\d{1,4})\.([A-Za-z]{3,})\.?(\d{1,4})?\b'
+        # Pattern 2: month.number (Jan.2025) or month.number.number (Jan.12.2025)
+        pattern2 = r'\b([A-Za-z]{3,})\.?(\d{1,4})(\.\d{1,4})?\b'
+        # Pattern 3: number.number.month (2025.12.Jan)
+        pattern3 = r'\b(\d{1,4})\.(\d{1,4})\.([A-Za-z]{3,})\b'
+        # Pattern 4: month.month.year (Jan.Feb.2025) - for date ranges
+        pattern4 = r'\b([A-Za-z]{3,})\.([A-Za-z]{3,})\.?(\d{1,4})?\b'
+
+        def replace_date(match, format_type):
+            if format_type == 1:  # number.month.number or number.month
+                day_or_year = match.group(1)
+                month = match.group(2)
+                year_or_day = match.group(3) if match.group(3) else ''
+
+                # Check if month part looks like a month
+                month_lower = month.lower()
+                if month_lower in self.MONTH_FORMATS:
+                    # Use proper case from MONTH_FORMATS
+                    proper_month = self.MONTH_FORMATS[month_lower]
+                    return f"{day_or_year}{proper_month}{year_or_day}"
+
+            elif format_type == 2:  # month.number or month.number.number
+                month = match.group(1)
+                number1 = match.group(2)
+                number2 = match.group(3)[1:] if match.group(3) else ''
+
+                month_lower = month.lower()
+                if month_lower in self.MONTH_FORMATS:
+                    proper_month = self.MONTH_FORMATS[month_lower]
+                    return f"{proper_month}{number1}{number2}"
+
+            elif format_type == 3:  # number.number.month
+                number1 = match.group(1)
+                number2 = match.group(2)
+                month = match.group(3)
+
+                month_lower = month.lower()
+                if month_lower in self.MONTH_FORMATS:
+                    proper_month = self.MONTH_FORMATS[month_lower]
+                    return f"{number1}{number2}{proper_month}"
+
+            elif format_type == 4:  # month.month.year (date ranges)
+                month1 = match.group(1)
+                month2 = match.group(2)
+                year = match.group(3) if match.group(3) else ''
+
+                month1_lower = month1.lower()
+                month2_lower = month2.lower()
+
+                if month1_lower in self.MONTH_FORMATS and month2_lower in self.MONTH_FORMATS:
+                    proper_month1 = self.MONTH_FORMATS[month1_lower]
+                    proper_month2 = self.MONTH_FORMATS[month2_lower]
+                    return f"{proper_month1}{proper_month2}{year}"
+
+            # If not a valid month pattern or format, return unchanged
+            return match.group(0)
+
+        # Apply each pattern
+        text = re.sub(pattern1, lambda m: replace_date(m, 1), text)
+        text = re.sub(pattern2, lambda m: replace_date(m, 2), text)
+        text = re.sub(pattern3, lambda m: replace_date(m, 3), text)
+        text = re.sub(pattern4, lambda m: replace_date(m, 4), text)
+
+        return text
+
     # Common abbreviations to preserve in uppercase
     ABBREVIATIONS = {
         # Academic Degrees (use periods just for testing the clean_abbreviation function)
@@ -865,6 +976,11 @@ class FileRenamer:
             raise ValueError(f"Input filename contains invalid characters: {e}")
 
         self.debug_print(f"\nProcessing: {filename!r}", level='normal')
+
+        # Apply special pattern cleaning for abbreviations and dates with periods
+        filename = self._clean_common_abbreviation_patterns(filename)
+        filename = self._clean_date_patterns_with_periods(filename)
+        self.debug_print(f"After preprocessing: {filename!r}", level='verbose')
 
         # Split into name and extension with rules:
         # 1. Extensions cannot contain spaces
