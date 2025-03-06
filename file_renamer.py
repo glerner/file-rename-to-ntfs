@@ -276,9 +276,7 @@ class FileRenamer:
         This preprocessing step handles abbreviations with periods before
         the text is split into tokens for further processing.
         """
-        self.debug_print(f"\n[ABBREV] Processing text: {text!r}", level='verbose')
-
-        self.debug_print(f"[ABBREV] All ABBREVIATIONS: {sorted(list(self.ABBREVIATIONS))}", level='verbose')
+        # self.debug_print(f"[ABBREV] All ABBREVIATIONS: {sorted(list(self.ABBREVIATIONS))}", level='verbose')
 
         # Patterns for letter-based abbreviations with periods
         # We'll use multiple patterns to handle different cases
@@ -290,11 +288,11 @@ class FileRenamer:
         import re
         pattern1_matches = list(re.finditer(pattern1, text, flags=re.IGNORECASE))
         if pattern1_matches:
-            self.debug_print(f"[ABBREV] Pattern1 matches ({len(pattern1_matches)}):", level='verbose')
+            self.debug_print(f"[ABBREV] Multi-letter Pattern matches ({len(pattern1_matches)}):", level='verbose')
             for i, match in enumerate(pattern1_matches):
                 self.debug_print(f"  Match {i+1}: '{match.group(1)}' at position {match.start()}-{match.end()}", level='verbose')
         else:
-            self.debug_print(f"[ABBREV] Pattern1: No matches found", level='verbose')
+            self.debug_print(f"[ABBREV] Multi-letter Pattern: No matches found", level='verbose')
 
         # Pattern 2: Single-word abbreviations with trailing period (Dr., Sgt., FDR., JFK.)
         pattern2 = r'(?:^|(?<=\W))([A-Za-z]{1,5}\.)(?=\s|$)'
@@ -302,11 +300,11 @@ class FileRenamer:
         # Test pattern2 on the input text
         pattern2_matches = list(re.finditer(pattern2, text, flags=re.IGNORECASE))
         if pattern2_matches:
-            self.debug_print(f"[ABBREV] Pattern2 matches ({len(pattern2_matches)}):", level='verbose')
+            self.debug_print(f"[ABBREV] Single-word Pattern matches ({len(pattern2_matches)}):", level='verbose')
             for i, match in enumerate(pattern2_matches):
                 self.debug_print(f"  Match {i+1}: '{match.group(1)}' at position {match.start()}-{match.end()}", level='verbose')
         else:
-            self.debug_print(f"[ABBREV] Pattern2: No matches found", level='verbose')
+            self.debug_print(f"[ABBREV] Single-word Pattern: No matches found", level='verbose')
 
         # Let's also test with a modified pattern2 to see if we can identify why it's not matching
         test_patterns = [
@@ -318,18 +316,22 @@ class FileRenamer:
         for i, test_pattern in enumerate(test_patterns):
             test_matches = list(re.finditer(test_pattern, text, flags=re.IGNORECASE))
             if test_matches:
-                self.debug_print(f"[ABBREV] Test pattern {i+1} matches ({len(test_matches)}):", level='verbose')
+                self.debug_print(f"[ABBREV] Test Pattern {i+1} matches ({len(test_matches)}):", level='verbose')
                 for j, match in enumerate(test_matches):
                     self.debug_print(f"  Match {j+1}: '{match.group(1)}' at position {match.start()}-{match.end()}", level='verbose')
             else:
-                self.debug_print(f"[ABBREV] Test pattern {i+1}: No matches found", level='verbose')
+                self.debug_print(f"[ABBREV] Test Pattern {i+1}: No matches found", level='verbose')
 
         # Combined pattern
         pattern = f'{pattern1}|{pattern2}'
 
         def replace_abbr(match):
-            abbr_with_periods = match.group(1)
-            self.debug_print(f"[ABBREV] Found match: {abbr_with_periods!r}", level='verbose')
+            try:
+                abbr_with_periods = match.group(1)
+                self.debug_print(f"[ABBREV] Found match: {abbr_with_periods!r}", level='verbose')
+            except Exception as e:
+                self.debug_print(f"[ABBREV] Error processing match: {e}", level='verbose')
+                return match.group(0)  # Return the original text if there's an error
 
             # Check if this is a single-word abbreviation with trailing period (Dr., Sgt.)
             if abbr_with_periods.count('.') == 1 and abbr_with_periods.endswith('.'):
@@ -378,7 +380,11 @@ class FileRenamer:
             return abbr_with_periods
 
         # Replace all matches (case-insensitive)
-        result = re.sub(pattern, replace_abbr, text, flags=re.IGNORECASE)
+        try:
+            result = re.sub(pattern, replace_abbr, text, flags=re.IGNORECASE)
+        except Exception as e:
+            self.debug_print(f"[ABBREV] Error in regex substitution: {e}", level='verbose')
+            result = text  # Return the original text if there's an error
 
         # Show if any changes were made
         if result != text:
@@ -386,6 +392,7 @@ class FileRenamer:
         else:
             self.debug_print(f"[ABBREV] No changes made to text", level='verbose')
 
+        self.debug_print(f"[ABBREV] Preprocessing complete, proceeding to normal processing", level='verbose')
         return result
 
     def _clean_date_patterns_with_periods(self, text):
@@ -941,7 +948,7 @@ class FileRenamer:
         Boundary cases (at end of filename):
             "m.d" -> current="d", titled=["M", "."], is_last_part=True -> "MD"
         """
-        self.debug_print(f"Entered check_abbreviation_with_context, titled_parts={titled_parts!r}")
+        self.debug_print(f"Entered check_abbreviation_with_context (SINGLE ABBREV PATH), titled_parts={titled_parts!r}")
 
         if not titled_parts:
             return False
@@ -971,7 +978,9 @@ class FileRenamer:
                     # Combine with previous abbreviation
                     first_abbrev = titled_parts[-2]
                     titled_parts[-2] = first_abbrev + abbr
-                    self.debug_print(f"    ✓ Found compound abbreviation: {first_abbrev!r} + '.' + {abbr!r} -> {titled_parts[-2]!r}")
+                    # Remove the period
+                    titled_parts.pop(-1)
+                    self.debug_print(f"    ✓ Found compound abbreviation IN CONTEXT METHOD: {first_abbrev!r} + '.' + {abbr!r} -> {titled_parts[-2]!r}")
                 else:
                     # Store as individual abbreviation
                     titled_parts[-len(prev_parts):] = []
@@ -1285,7 +1294,7 @@ class FileRenamer:
                 # Debug abbreviation check
                 self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
                 if titled_parts:
-                    self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
+                    self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
 
                 if part.isalpha():
                     # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
@@ -1295,13 +1304,13 @@ class FileRenamer:
                         self.debug_print(f"    last_part={titled_parts[-1]!r}    is_abbrev={titled_parts[-1] in self.ABBREVIATIONS}    is_number={titled_parts[-1].isdigit()}    is_month={part.upper() in self.MONTH_FORMATS}")
                     if (titled_parts and
                         prev_part == '.' and
-                        (titled_parts[-1] in self.ABBREVIATIONS or
-                         (titled_parts[-1].isdigit() and part.upper() in self.MONTH_FORMATS.upper()))):
-                        self.debug_print(f"  ✓ Found compound pattern match")
+                        (titled_parts[-2] in self.ABBREVIATIONS or
+                        (titled_parts[-2].isdigit() and part.upper() in self.MONTH_FORMATS.upper()))):
+                        self.debug_print(f"  ✓ Found compound pattern match in MAIN LOOP")
                         self.debug_print(f"    titled_parts={titled_parts!r}")
 
                         # Get first abbreviation before loop
-                        first_abbrev = titled_parts[-1]    # e.g. "Lt"
+                        first_abbrev = titled_parts[-2]    # e.g. "Lt"
                         second_abbrev = None  # Initialize to None
                         self.debug_print(f"    first_abbrev={first_abbrev!r}")
 
@@ -1314,27 +1323,38 @@ class FileRenamer:
                                 self.debug_print(f"    Set second_abbrev={second_abbrev!r}")
 
                                 # Combine abbreviations (no need to remove period since it wasn't added)
-                                self.debug_print(f"    Before combine: titled_parts[-1]={titled_parts[-1]!r}")
-                                titled_parts[-1] = first_abbrev + second_abbrev
-                                self.debug_print(f"    After combine: titled_parts[-1]={titled_parts[-1]!r}")
+                                self.debug_print(f"    Before combine: titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}")
+                                try:
+                                    titled_parts[-2] = first_abbrev + second_abbrev
+                                    self.debug_print(f"    After replace: titled_parts={titled_parts!r}")
+                                    # Remove the period
+                                    titled_parts.pop(-1)
+                                    self.debug_print(f"    After pop: titled_parts={titled_parts!r}")
+                                    self.debug_print(f"    After combine: titled_parts={titled_parts!r}")
+                                except Exception as e:
+                                    self.debug_print(f"    ERROR in combine: {e}")
 
                                 # Update tracking variables
-                                prev_part = titled_parts[-1]
-                                prev_was_abbrev = True
-                                prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
+                                if titled_parts:
+                                    prev_part = titled_parts[-1]  # Now points to the combined abbreviation after period removal
+                                    prev_was_abbrev = True
+                                    prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
+                                else:
+                                    self.debug_print(f"    WARNING: titled_parts is empty after combine operation")
                                 break
 
                         self.debug_print(f"    After loop:")
                         self.debug_print(f"      second_abbrev={second_abbrev!r}")
                         self.debug_print(f"      titled_parts={titled_parts!r}")
                         self.debug_print(f"      prev_part={prev_part!r}")
+                        self.debug_print(f"      Combined result: {''.join(titled_parts)!r}")
 
                         if second_abbrev is not None:
                             continue
 
                     # Otherwise check for normal abbreviation
                     elif titled_parts and prev_part == '.':
-                        self.debug_print(f"  ✓ Found potential abbreviation part")
+                        self.debug_print(f"  ✓ Found potential SINGLE abbreviation part")
                         # Check if current part with previous parts forms an abbreviation
                         # For example: current='d', prev=['M', '.'] -> 'M.d' -> 'MD'
                         is_last = i == len(parts) - 1 or all(p in self.WORD_BOUNDARY_CHARS for p in parts[i+1:])
@@ -1516,8 +1536,8 @@ class FileRenamer:
                             break
 
                 # If no match but it's 1-3 letters and all uppercase, treat as abbreviation (e.g. initials FDR, JFK)
-                if not found_abbrev and len(test_word) <= 3 and test_word.isupper():
-                    found_abbrev = test_word
+                if not found_abbrev and len(word) <= 3 and word.isupper():
+                    found_abbrev = word
                     abbrev_debug = f"✓ {found_abbrev!r} (uppercase 1-3 letters)"
 
                 # If at end of text and no match, try with trailing period
