@@ -92,13 +92,13 @@ pip install -r requirements.txt
 3. Run the tests:
 ```bash
 # Run tests with verbose output
-python -m pytest test_file_renamer.py -v
+clear; python -m pytest test_file_renamer.py -v
 
 # Run tests with basic coverage report
-python -m pytest test_file_renamer.py -v --cov=file_renamer
+clear; python -m pytest test_file_renamer.py -v --cov=file_renamer
 
 # Run tests with detailed coverage report showing missing lines
-python -m pytest test_file_renamer.py -v --cov=file_renamer --cov-report=term-missing
+clear; python -m pytest test_file_renamer.py -v --cov=file_renamer --cov-report=term-missing
 ```
 
 4. Cleanup (when finished):
