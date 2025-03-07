@@ -204,6 +204,7 @@ class FileRenamer:
 
     # File extensions where we want to preserve the original case of the base name
     # Only includes extensions that might be included/imported/required by code
+    # Should be all lowercase, no periods
     PRESERVE_CASE_EXTENSIONS = {
         # Web
         'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'vue', 'php',
@@ -341,7 +342,7 @@ class FileRenamer:
         else:
             self.debug_print(f"[ABBREV] No changes made to text", level='verbose')
 
-        self.debug_print(f"[ABBREV] Preprocessing complete, proceeding to normal processing", level='verbose')
+        self.debug_print(f"[ABBREV] Preprocessing complete, result: {result!r}", level='verbose')
         return result
 
     def _clean_date_patterns_with_periods(self, text):
@@ -1018,11 +1019,6 @@ class FileRenamer:
 
         self.debug_print(f"\nProcessing: {filename!r}", level='normal')
 
-        # Apply special pattern cleaning for abbreviations and dates with periods
-        filename = self._clean_common_abbreviation_patterns(filename)
-        filename = self._clean_date_patterns_with_periods(filename)
-        self.debug_print(f"After preprocessing: {filename!r}", level='verbose')
-
         # Split into name and extension with rules:
         # 1. Extensions cannot contain spaces
         # 2. Don't treat trailing periods as extension separators
@@ -1052,7 +1048,6 @@ class FileRenamer:
         # For known file extensions (like .py, .js):
         # - Keep the original filename case (don't title case it)
         # - Always use lowercase for the extension
-        preserve_name_case = extension.lower() in self.PRESERVE_CASE_EXTENSIONS
 
         # Get reference to replacements dict for cleaner code
         R = FileRenamer.CHAR_REPLACEMENTS
@@ -1133,9 +1128,19 @@ class FileRenamer:
                 self.debug_print(f"Extension {potential_ext!r} not in recognized list")
 
         # For normal files, apply title case to the name
-        # For files with extensions such as programming files (.c, .py, .js), preserve the original name case
+        # For files with extensions such as programming files (.c, .py, .js),
+        # preserve the original name case (only basic character replacements and whitespace normalization)
         # Extensions are always lowercased
-        if not extension.lower() in self.PRESERVE_CASE_EXTENSIONS:
+        is_programming_ext = extension.lower() in self.PRESERVE_CASE_EXTENSIONS
+        if is_programming_ext:
+            self.debug_print(f"Programming file extension detected: .{extension.lower()}, preserving original name case", level='normal')
+
+        if not is_programming_ext:
+            # Apply special pattern cleaning for abbreviations and dates with periods
+            # Only process the name part, not the extension
+            name = self._clean_common_abbreviation_patterns(name)
+            name = self._clean_date_patterns_with_periods(name)
+
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
             # self.debug_print(f"Split pattern: {split_pattern}")
@@ -1184,7 +1189,7 @@ class FileRenamer:
                 # 3. Unit check (e.g. 5kb, 10s)
                 # important since abbreviations and units can be contractions/possessives ("I'd" vs "M. D." vs "5 d" or "John's" vs "10 s"). Contractions/possessives must be immediately preceded by an apostrophe-like character.
 
-                self.debug_print(f"⮑ Word: {word!r} (prev={prev_part!r}, Found Abbrev: {titled_parts[-1] if titled_parts and titled_parts[-1] in self.ABBREVIATIONS else None}, PrevPart: {prev_part}, PriorDatePart:{prior_date_part})")
+                self.debug_print(f"⮑ Word: {word!r} (prev_part={prev_part!r}, Found Abbrev: {titled_parts[-1] if titled_parts and titled_parts[-1] in self.ABBREVIATIONS else None}, PriorDatePart: {prior_date_part})")
                 # Check for contractions/possessives first (before unit check)
                 if word in self.CONTRACTIONS and len(titled_parts) >= 2:
                     # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
@@ -1242,8 +1247,10 @@ class FileRenamer:
                 # - "I'd" -> "I'd" (contraction)
                 # Debug abbreviation check
                 self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
-                if titled_parts:
+                if len(titled_parts) >= 2:
                     self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
+                elif titled_parts:
+                    self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
 
                 if part.isalpha():
                     # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
@@ -1252,6 +1259,7 @@ class FileRenamer:
                     if titled_parts:
                         self.debug_print(f"    last_part={titled_parts[-1]!r}    is_abbrev={titled_parts[-1] in self.ABBREVIATIONS}    is_number={titled_parts[-1].isdigit()}    is_month={part.upper() in self.MONTH_FORMATS}")
                     if (titled_parts and
+                        len(titled_parts) >= 2 and
                         prev_part == '.' and
                         (titled_parts[-2] in self.ABBREVIATIONS or
                         (titled_parts[-2].isdigit() and part.upper() in self.MONTH_FORMATS.upper()))):
@@ -1569,11 +1577,13 @@ class FileRenamer:
                     is_between_spaces):   # Between spaces, not after special char
 
                     self.debug_print(f"  Adding to titled_parts: {word!r} (lowercase)")
-                    titled_parts.append(word)
+                    processed_word = word
+                    titled_parts.append(processed_word)
                 else:
-                    self.debug_print(f"  Adding to titled_parts: {word.capitalize()!r} (capitalized)")
-                    titled_parts.append(word.capitalize())
-                prev_part = part
+                    processed_word = word.capitalize()
+                    self.debug_print(f"  Adding to titled_parts: {processed_word!r} (capitalized)")
+                    titled_parts.append(processed_word)
+                prev_part = processed_word  # Store the processed version, not the original
                 prior_abbreviation = None  # Reset for non-abbreviation word
 
             # Join parts and normalize periods

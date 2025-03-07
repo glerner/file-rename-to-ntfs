@@ -691,8 +691,8 @@ class TestFileRenamer(unittest.TestCase):
             ("100gb gigabit ssd vs 2TB hdd.txt", "100Gb Gigabit SSD vs 2TB HDD.txt"),
             ("car going 60mph and spinning at 33rpm at 68deg.txt", "Car Going 60mph and Spinning at 33rpm at 68deg.txt"),
             ("movie at 30fps and 25c.txt", "Movie at 30fps and 25C.txt"),
-            ("car gets 30mpg in city 7lkm highway.txt", "Car Gets 30mpg in City 7lkm Highway.txt"),
-            ("compare 35MPG vs 8LKM fuel usage.txt", "Compare 35mpg vs 8lkm Fuel Usage.txt"),
+            ("compare 35MPG vs 14.88km/L (or 6.72L/100km) fuel usage.txt", f"Compare 35mpg vs 14.88km{R['/']}L (or 6.72L{R['/']}100km) Fuel Usage.txt"),
+
             # Ordinal numbers
             ("1st 2nd 3rd 4th place.txt", "1st 2nd 3rd 4th Place.txt"),
             ("7th 11th 12th 13th floor.txt", "7th 11th 12th 13th Floor.txt"),
