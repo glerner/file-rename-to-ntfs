@@ -145,7 +145,7 @@ class FileRenamer:
         '{{': '⦃',  # Left White Curly Bracket
         '}}': '⦄',  # Right White Curly Bracket
         '|': '│',   # Box Drawings Light Vertical
-        '&': 'and', # Replace ampersand with 'and'
+        '&': ' and ', # Replace ampersand with 'and'
         '$': '＄',  # Full Width Dollar Sign
         '!': '!',   # Keep exclamation mark but collapse multiples
         '...': '…',  # Replace three or more periods with ellipsis character
@@ -157,6 +157,16 @@ class FileRenamer:
 
     # Shorthand for readability
     R = CHAR_REPLACEMENTS
+
+    # List of terms with specific capitalization and punctuation to preserve exactly
+    PRESERVED_TERMS = [
+        # TV/Movie ratings (only needing special handling)
+        'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
+        # Medical terms
+        'X-Ray',
+        # Company names with specific capitalization/punctuation
+        'AT&T', 'Barnes&Noble', 'Coca-Cola, Inc.', 'Toys"R"Us', 'J.Hud'
+    ]
 
     # All opening bracket characters (ASCII and replacements)
     OPENING_BRACKETS = {
@@ -358,59 +368,160 @@ class FileRenamer:
         self.debug_print(f"[ABBREV] Preprocessing complete, result: {result!r}", level='verbose')
         return result
 
-    def _preserve_hyphenated_abbreviations(self, text):
+    def _preserve_special_terms(self, text):
         """
-        Preserve hyphenated abbreviations by replacing them with temporary markers
-        before text splitting. This ensures abbreviations like TV-MA, PG-13, etc.
-        are treated as single tokens rather than being split at the hyphen.
-        
+        Preserve terms with specific capitalization and punctuation by replacing them with
+        temporary markers before text splitting. This ensures terms like TV-MA, AT&T, etc.
+        are treated as single tokens rather than being split at punctuation characters.
+
         Args:
             text: Text to process
-            
+
         Returns:
-            Text with hyphenated abbreviations replaced by markers
+            Text with preserved terms replaced by markers
         """
-        # List of hyphenated abbreviations to preserve
-        hyphenated_abbrevs = [
-            'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
-            'X-Ray'  # Add any other hyphenated abbreviations here
-        ]
+        # Create a unique marker for each term
+        self._preserved_term_markers = {}
+        self._preserved_term_originals = {}
+        self._normalized_terms = {}
+
+        # Debug: Show how many terms we have - use 'verbose' level which is more likely to be seen
+        self.debug_print(f"[PRESERVED] Number of terms in PRESERVED_TERMS: {len(self.PRESERVED_TERMS)}", level='verbose')
+
+        # Create normalized versions of terms (removing spaces and punctuation) for matching
+        for i, term in enumerate(self.PRESERVED_TERMS):
+            marker = f"__PRESERVED_TERM_{i}__"
+            self._preserved_term_markers[term] = marker
+            self._preserved_term_originals[marker] = term  # Store original capitalization
+
+            # Create normalized version (lowercase, no spaces or punctuation)
+            normalized = re.sub(r'[\s\-.,;:"&!?()]', '', term.lower())
+            self._normalized_terms[normalized] = (term, marker)
+
+            # Debug output is now in the detail level
+            pass
+
+            # Debug: Show normalized versions
+            self.debug_print(f"[PRESERVED] Term: {term!r} → Normalized: {normalized!r}", level='detail')
+
+        # Debug: Show the complete dictionaries
+        self.debug_print("\n[PRESERVED] _preserved_term_markers dictionary:", level='detail')
+        for term, marker in self._preserved_term_markers.items():
+            self.debug_print(f"  {term!r} → {marker!r}", level='detail')
+
+        self.debug_print("\n[PRESERVED] _preserved_term_originals dictionary:", level='detail')
+        for marker, term in self._preserved_term_originals.items():
+            self.debug_print(f"  {marker!r} → {term!r}", level='detail')
+
+        self.debug_print("\n[PRESERVED] _normalized_terms dictionary:", level='detail')
+        for norm, (term, marker) in self._normalized_terms.items():
+            self.debug_print(f"  {norm!r} → ({term!r}, {marker!r})", level='detail')
+
+        # First try exact matches (case-insensitive)
+        for term in self.PRESERVED_TERMS:
+            # Replace the term with its marker (case-insensitive)
+            new_text = re.sub(rf'\b{re.escape(term)}\b', self._preserved_term_markers[term], text, flags=re.IGNORECASE)
+            if new_text != text:
+                self.debug_print(f"[PRESERVED] Exact match: {term!r} in text", level='verbose')
+                text = new_text
+
+        # Then try normalized matches (without punctuation)
+        # This allows "Coca Cola Inc" to match "Coca-Cola, Inc."
+
+        # Special handling for multi-word company names with specific formatting
+        # This allows "Coca-COLA, INC." to match "Coca-Cola, Inc."
+
+        # Implement a direct solution for Coca-Cola, Inc.
+        # This will handle variations like "Coca-COLA, INC." or "Coca Cola Inc"
+
+        # First, try to find any Coca-Cola pattern in the text
+        coca_pattern = r'Coca[\-\s]*Cola[\s\-,.;:"&!?()]*(?:Inc|INC|inc)'
+        coca_matches = re.findall(coca_pattern, text, re.IGNORECASE)
+
+        # Process any matches we found
+        for match in coca_matches:
+            # Get the normalized form of the match
+            normalized_match = re.sub(r'[\s\-.,;:"&!?()]', '', match.lower())
+            
+            # Check if it matches our normalized terms
+            if normalized_match in self._normalized_terms:
+                original_term, marker = self._normalized_terms[normalized_match]
+                text = text.replace(match, marker)
+                self.debug_print(f"[PRESERVED] Special match: {match!r} → {original_term!r}", level='verbose')
+            else:
+                # Check if it's close to any of our normalized terms
+                for norm_key, (original_term, marker) in self._normalized_terms.items():
+                    # For company names, allow more flexible matching
+                    if 'coca' in norm_key and 'cola' in norm_key:
+                        if norm_key in normalized_match or normalized_match in norm_key:
+                            text = text.replace(match, marker)
+                            self.debug_print(f"[PRESERVED] Flexible match: {match!r} → {original_term!r}", level='verbose')
+                            break
+
+        # Get all word groups to check with the original regex
+        words = re.findall(r'\b[\w\s\-.,;:"&!?()]+\b', text)
+        self.debug_print(f"[PRESERVED] Found {len(words)} word groups to check", level='detail')
         
-        # Create a unique marker for each abbreviation
-        self._hyphen_abbrev_markers = {}
-        for i, abbr in enumerate(hyphenated_abbrevs):
-            marker = f"__HYPHEN_ABBR_{i}__"
-            self._hyphen_abbrev_markers[abbr] = marker
-            # Replace the abbreviation with its marker (case-insensitive)
-            text = re.sub(rf'\b{re.escape(abbr)}\b', marker, text, flags=re.IGNORECASE)
-            self.debug_print(f"[HYPHEN_ABBREV] Checking for {abbr!r} in {text!r}", level='verbose')
-        
+        for word_group in words:
+            # Normalize the word group
+            normalized_group = re.sub(r'[\s\-.,;:"&!?()]', '', word_group.lower())
+            self.debug_print(f"[PRESERVED] Checking: {word_group!r} → Normalized: {normalized_group!r}", level='detail')
+
+            # Special debug for Coca-Cola
+            if 'coca' in normalized_group.lower() or 'cola' in normalized_group.lower():
+                self.debug_print(f"[PRESERVED] Found potential Coca-Cola reference: {word_group!r}", level='detail')
+                # Check if it should match any of our normalized terms
+                for norm_key, (orig_term, _) in self._normalized_terms.items():
+                    if 'coca' in norm_key and 'cola' in norm_key:
+                        self.debug_print(f"[PRESERVED] Comparing: {normalized_group!r} with {norm_key!r} from {orig_term!r}", level='detail')
+                        # Show how similar they are
+                        if normalized_group == norm_key:
+                            self.debug_print(f"[PRESERVED] EXACT MATCH of normalized forms!", level='detail')
+                        elif normalized_group in norm_key:
+                            self.debug_print(f"[PRESERVED] Normalized group is CONTAINED IN normalized term", level='detail')
+                        elif norm_key in normalized_group:
+                            self.debug_print(f"[PRESERVED] Normalized term is CONTAINED IN normalized group", level='detail')
+
+            # Check if this normalized group matches any of our terms
+            if normalized_group in self._normalized_terms:
+                original_term, marker = self._normalized_terms[normalized_group]
+                # Replace this specific instance with the marker
+                text = text.replace(word_group, marker, 1)
+                self.debug_print(f"[PRESERVED] Normalized match: {word_group!r} → {original_term!r}", level='verbose')
+            else:
+                # Try to find partial matches for debugging
+                for norm_key in self._normalized_terms:
+                    if norm_key in normalized_group or normalized_group in norm_key:
+                        self.debug_print(f"[PRESERVED] Near miss: {normalized_group!r} vs {norm_key!r} (from {self._normalized_terms[norm_key][0]!r})", level='detail')
+
         return text
-    
-    def _restore_hyphenated_abbreviations(self, parts):
+
+    def _restore_special_terms(self, parts):
         """
-        Restore hyphenated abbreviations from their temporary markers after text splitting.
-        
+        Restore preserved terms from their temporary markers after text splitting.
+
         Args:
             parts: List of parts to process
-            
+
         Returns:
-            List of parts with markers replaced by original abbreviations
+            List of parts with markers replaced by original preserved terms
         """
-        if not hasattr(self, '_hyphen_abbrev_markers'):
+        if not hasattr(self, '_preserved_term_originals'):
             return parts
-            
+
         restored_parts = []
         for part in parts:
             restored = part
-            for abbr, marker in self._hyphen_abbrev_markers.items():
+            # Check if this part contains any of our markers
+            for marker, original in self._preserved_term_originals.items():
                 if marker in part:
-                    restored = part.replace(marker, abbr)
-                    self.debug_print(f"[HYPHEN_ABBREV] Restored {marker!r} to {abbr!r}", level='verbose')
+                    # Replace with the original capitalization from our list
+                    restored = part.replace(marker, original)
+                    self.debug_print(f"[PRESERVED] Restored {marker!r} to {original!r}", level='detail')
                     break
             restored_parts.append(restored)
         return restored_parts
-        
+
     def _clean_date_patterns_with_periods(self, text):
         """
         Detect and clean date patterns with periods.
@@ -1180,6 +1291,10 @@ class FileRenamer:
         # Just collapse any multiple spaces that might have been introduced during processing
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
 
+        # First preserve hyphenated abbreviations and company names
+        # This must happen BEFORE special character replacements (especially & -> and)
+        name = self._preserve_special_terms(name)
+
         # Replace special characters
         # self.debug_print(f"Before replacements: {name!r}", level='normal')
 
@@ -1258,7 +1373,6 @@ class FileRenamer:
             # Only process the name part, not the extension
             name = self._clean_common_abbreviation_patterns(name)
             name = self._clean_date_patterns_with_periods(name)
-            name = self._preserve_hyphenated_abbreviations(name)
 
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
@@ -1272,9 +1386,9 @@ class FileRenamer:
 
             # Filter out empty parts
             parts = [p for p in test_parts if p != '']
-            
+
             # Restore hyphenated abbreviations that were replaced with markers
-            parts = self._restore_hyphenated_abbreviations(parts)
+            parts = self._restore_special_terms(parts)
 
             titled_parts = []
             prev_part = ''

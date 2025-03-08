@@ -649,7 +649,9 @@ class TestFileRenamer(unittest.TestCase):
             # Movie/TV ratings
             ("movie pg-13 2024.mp4", "Movie PG-13 2024.mp4"),
             ("tv show TV-MA s01.mkv", "TV Show TV-MA S01.mkv"),
-            # Must be uppercase MA or becomes TV-Ma ('TV', '-', 'Ma')
+
+            # hyphenated abbreviations, and exact case and punctuation e.g. company names
+            ("X-ray of TV-MA and PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble.txt", "X-Ray of TV-MA and PG-13 and J.Hud, AT&T Coca-Cola, Inc. Barnes&Noble.txt"),
 
             # TV networks (but not the word 'fox')
             ("hbo special on bbc news.mp4", "HBO Special on BBC News.mp4"),
