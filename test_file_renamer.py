@@ -340,6 +340,7 @@ class TestFileRenamer(unittest.TestCase):
             ('file[1].txt....', 'File[1].txt'),  # Keep brackets, remove trailing periods. That leaves a new file extension '.txt'
             ('script."unknown"...', f'Script.{quote}Unknown{quote}'),  # Keep quote but remove trailing periods
             ('script.py"...', f'script.py'),  # Remove quote and remove trailing periods, recognize new file extension '.py'
+            ('script\nwith-newline.py', f'script with-newline.py'),  # Remove newline in programming filename
             ('log|...', 'Log'),  # Remove vertical line or other special character and trailing periods
             ('test<...', 'Test'),  # Remove angle bracket and trailing periods
             ('test\\...', 'Test'),  # Remove backslash and trailing periods
@@ -652,8 +653,9 @@ class TestFileRenamer(unittest.TestCase):
 
             # hyphenated abbreviations, and exact case and punctuation e.g. company names
             ("X-ray of TV-MA and PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble.txt", "X-Ray of TV-MA and PG-13 and J.Hud, AT&T Coca-Cola, Inc. Barnes&Noble.txt"),
+            ("LiveDesign Biologics structure of key proteins hERG, programs targeting EGFRC797S, PRMT5-MTA and NLRP3.txt", "LiveDesign Biologics Structure of Key Proteins hERG, Programs Targeting EGFRC797S, PRMT5-MTA and NLRP3.txt"),
 
-            # TV networks (but not the word 'fox')
+            # TV networks (b`ut not the word 'fox')
             ("hbo special on bbc news.mp4", "HBO Special on BBC News.mp4"),
             ("cnn vs fox debate.mp4", "CNN vs Fox Debate.mp4"),
 
@@ -663,20 +665,16 @@ class TestFileRenamer(unittest.TestCase):
             # State abbreviations that are common English words
             ("My pa says oh my go from OR to PA or OH.txt", "My Pa Says Oh My Go from OR to PA or OH.txt"),
 
-            # Can't handle initials (2-3 letters, all-caps) indistinguishable from all-uppercase common words.
-            # Test list of words in KEEP_CAPITALIZED_IF_ALLCAPS
-            ("FDR.txt", "FDR.txt"),
-            ("FDR and JFK Walked On THE Road to ON (Ontario).txt", "Fdr and Jfk Walked on the Road to ON (Ontario).txt"),
+            # Can't handle initials (2-3 letters, all-caps) as they are indistinguishable from all-uppercase common words.
+            # Test words in KEEP_CAPITALIZED_IF_ALLCAPS
+            ("FDR and JFK Walked On THE Road to ON (Ontario).txt", "FDR and JFK Walked on the Road to ON (Ontario).txt"),
 
             # Military ranks (basic)
-            ("sgt smith report.txt", "Sgt Smith Report.txt"),
-            ("SGT. SMITH REPORT.txt", "Sgt Smith Report.txt"),
+            ("sgt smith report and SGT. SMITH REPORT.txt", "Sgt Smith Report and Sgt Smith Report.txt"),
 
             # Military ranks (combined)
-            ("lt.col smith report.pdf", "LtCol Smith Report.pdf"),
+            ("lt.col smith report lt col smith LT.COL..pdf", "LtCol Smith Report Lt Col Smith LtCol.pdf"),
             ("LtCol with no period is just a word with internal capital letter.pdf", "Ltcol with No Period is Just a Word with Internal Capital Letter.pdf"),
-            ("lt col smith report.pdf", "Lt Col Smith Report.pdf"),
-            ("LT.COL. SMITH REPORT.pdf", "LtCol Smith Report.pdf"),
 
             # Multiple ranks in one name
             ("sgt smith to lt.col jones memo.doc", "Sgt Smith to LtCol Jones Memo.doc"),
@@ -687,10 +685,10 @@ class TestFileRenamer(unittest.TestCase):
             ("3pm 2hr HR meeting.txt", "3PM 2hr hr Meeting.txt"), # unit hr preferred over abbreviation
 
             # Government/Organizations
-            ("fbi and cia report.pdf", "FBI and CIA Report.pdf"),
-            ("irs tax forms 2024.pdf", "IRS Tax Forms 2024.pdf"),
-            ("dod and doj and SEC meeting.txt", "DOD and DOJ and sec Meeting.txt"),
+            ("fbi and cia IRS report.pdf", "FBI and CIA IRS Report.pdf"),
+            ("dod, DOE, Doj and SEC meeting about buck and doe.txt", "DOD, DOE, DOJ and sec Meeting About Buck and Doe.txt"),
             # 'sec' for seconds over 'SEC' for Securities and Exchange Commission
+            # 'DOE' only if all caps
 
             # Mexican States
             ("cdmx to bc road trip.mp4", "CDMX to BC Road Trip.mp4"),
@@ -802,7 +800,7 @@ class TestFileRenamer(unittest.TestCase):
             ("5kB file.txt", "5kB File.txt"),
             ("2MB cache.dat", "2MB Cache.dat"),
             ("500GB drive.img", "500GB Drive.img"),
-            ("2TB backup.zip", "2TB Backup.zip"),
+            ("2TB backup Version+Update.zip", "2TB Backup Version+Update.zip"),
 
             # Mixed case variants
             ("10KB test.txt", "10kB Test.txt"),

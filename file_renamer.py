@@ -160,10 +160,10 @@ class FileRenamer:
 
     # List of terms with specific capitalization and punctuation to preserve exactly
     PRESERVED_TERMS = [
-        # TV/Movie ratings (only needing special handling)
+        # TV/Movie ratings (okay if some do not need special handling)
         'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
         # Medical terms
-        'X-Ray',
+        'X-Ray', 'LiveDesign Biologics', 'hERG', 'EGFRC797S', 'PRMT5-MTA', 'NLRP3',
         # Company names with specific capitalization/punctuation
         'AT&T', 'Barnes&Noble', 'Coca-Cola, Inc.', 'Toys"R"Us', 'J.Hud'
     ]
@@ -199,10 +199,9 @@ class FileRenamer:
     }
 
     # Only include special characters that should act as word boundaries
-# Only include special characters that should act as word boundaries
     WORD_BOUNDARY_CHARS = {
         R['\\'], R[':'], R['*'], R['?'], R['|'], R['"'], R['/'],  # Special character replacements
-        '.', ' ', '-', "'", '\u02bc',  # Standard word boundaries, including Modifier Letter Apostrophe
+        '.', ' ', ',', ';', '-', '+', "'", '\u02bc',  # Standard word boundaries, including ASCII Apostrophe and Modifier Letter Apostrophe
         R['<'], R['>'],                  # Angle brackets
         R['...'],                        # Ellipsis
         '(', '[', '{', '<',              # ASCII opening brackets
@@ -346,7 +345,6 @@ class FileRenamer:
 
                     # Substitute the cleaned abbreviation in the text
                     try:
-                        self.debug_print(f"[ABBREV] Before sub: text={result!r}, pattern={match_text!r}, replacement={cleaned_abbr!r}", level='verbose')
                         # Use re.escape to handle special regex characters in the match text
                         escaped_pattern = re.escape(match_text)
                         result, num_subs = re.subn(escaped_pattern, cleaned_abbr, result, count=1, flags=re.IGNORECASE)
@@ -356,14 +354,14 @@ class FileRenamer:
                         self.debug_print(f"[ABBREV] match: {match!r}", level='verbose')
                         self.debug_print(f"[ABBREV] match_text: {match_text!r}", level='verbose')
                         self.debug_print(f"[ABBREV] cleaned_abbr: {cleaned_abbr!r}", level='verbose')
-            else:
-                self.debug_print(f"[ABBREV] Pattern {i+1}: No matches found", level='verbose')
+            # else:
+                # self.debug_print(f"[ABBREV] Pattern {i+1}: No matches found", level='verbose')
 
         # Show if any changes were made
         if result != text:
             self.debug_print(f"[ABBREV] Changed: {text!r} -> {result!r}", level='verbose')
-        else:
-            self.debug_print(f"[ABBREV] No changes made to text", level='verbose')
+        # else:
+            # self.debug_print(f"[ABBREV] No changes made to text", level='verbose')
 
         self.debug_print(f"[ABBREV] Preprocessing complete, result: {result!r}", level='verbose')
         return result
@@ -384,9 +382,6 @@ class FileRenamer:
         self._preserved_term_markers = {}
         self._preserved_term_originals = {}
         self._normalized_terms = {}
-
-        # Debug: Show how many terms we have - use 'verbose' level which is more likely to be seen
-        self.debug_print(f"[PRESERVED] Number of terms in PRESERVED_TERMS: {len(self.PRESERVED_TERMS)}", level='verbose')
 
         # Create normalized versions of terms (removing spaces and punctuation) for matching
         for i, term in enumerate(self.PRESERVED_TERMS):
@@ -442,7 +437,7 @@ class FileRenamer:
         for match in coca_matches:
             # Get the normalized form of the match
             normalized_match = re.sub(r'[\s\-.,;:"&!?()]', '', match.lower())
-            
+
             # Check if it matches our normalized terms
             if normalized_match in self._normalized_terms:
                 original_term, marker = self._normalized_terms[normalized_match]
@@ -461,7 +456,7 @@ class FileRenamer:
         # Get all word groups to check with the original regex
         words = re.findall(r'\b[\w\s\-.,;:"&!?()]+\b', text)
         self.debug_print(f"[PRESERVED] Found {len(words)} word groups to check", level='detail')
-        
+
         for word_group in words:
             # Normalize the word group
             normalized_group = re.sub(r'[\s\-.,;:"&!?()]', '', word_group.lower())
@@ -643,10 +638,11 @@ class FileRenamer:
         'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT', 'UTC',
 
         # Government/Organizations
-        'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOE', 'DOJ', 'FBI', 'FCC',
+        'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOJ', 'FBI', 'FCC',
         'FDA', 'FEMA', 'FTC', 'IRS', 'NASA', 'NOAA', 'NSA', 'TSA', 'USDA',
         'EPA', 'SSA', 'UN', 'USPS',
-        # not 'SEC', 'sec' is a numbered unit, 'ICE'
+        # not 'SEC', 'sec' is a numbered unit,
+        # 'ICE' in KEEP_CAPITALIZED_IF_ALLCAPS
 
         # Mexican States (official abbreviations)
         'AGS',  # Aguascalientes
@@ -941,6 +937,7 @@ class FileRenamer:
         'DE': 'de',  # Delaware - 'de' Spanish (of/from)
         'DO': 'do',   # Dominican Republic - 'do' verb
         'DOE': 'doe', # Department of Energy - 'doe' female deer
+        'FDR': 'FDR', # Franklin D. Roosevelt - 'FDR' initials
         'HE': 'he',   # Hesse, Germany - 'he' pronoun
         'HI': 'hi',  # Hawaii - 'hi' English exclamation
         'HR': 'hr',   # Human Resources - 'hr' hour
@@ -948,6 +945,7 @@ class FileRenamer:
         'IN': 'in',  # Indiana - 'in' English preposition
         'IS': 'is',   # Information Systems - 'is' verb
         'IT': 'it',   # Information Technology - 'it' pronoun
+        'JFK': 'JFK', # John F. Kennedy - 'JFK' initials
         'LA': 'la',  # Louisiana - 'la' English exclamation
         'MA': 'ma',  # Massachusetts - 'ma' mother
         'ME': 'me',  # Maine - 'me' English pronoun
@@ -962,7 +960,7 @@ class FileRenamer:
         'PC': 'pc',   # Personal Computer - 'pc' piece
         'PST': 'pst', # Pacific Standard Time - 'pst' exclamation
         'RAM': 'ram', # Random Access Memory - 'ram' male sheep
-        'SEC': 'sec', # Securities and Exchange Commission - 'sec' second
+        # NOT 'SEC': 'sec', # Securities and Exchange Commission - 'sec' second
         'SIN': 'sin',  # Sinaloa - 'sin' English word
         'SO': 'so',   # Somalia - 'so' adverb
         'SON': 'son',  # Sonora - 'son' English word
@@ -1415,6 +1413,15 @@ class FileRenamer:
 
                 self.debug_print(f"\nProcessing part {i}: {part!r} (len={len(part)}, has_boundary={[c for c in part if c in self.WORD_BOUNDARY_CHARS]})")
 
+                # Check if this part is in the PRESERVED_TERMS list - if so, add it as-is and skip processing
+                if part in self.PRESERVED_TERMS:
+                    titled_parts.append(part)
+                    processed_parts[i] = f"preserved term: {part!r}"
+                    self.debug_print(f"  Preserving term as-is: {part!r}")
+                    prev_part = part
+                    continue
+
+
                 # Convert to title case, handling special cases
                 word = part.lower()  # First convert to lowercase
                 # self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
@@ -1842,10 +1849,21 @@ class FileRenamer:
                 prev_part = processed_word  # Store the processed version, not the original
                 prior_abbreviation = None  # Reset for non-abbreviation word
 
-            # Join parts and normalize periods
+            # Handle periods in preserved terms by replacing with a placeholder
+            PRESERVED_PERIOD_PLACEHOLDER = '__PRESERVED_TERM_PERIOD__'
+            preserved_terms_with_periods = [term for term in self.PRESERVED_TERMS if '.' in term]
+            for term in preserved_terms_with_periods:
+                # Create a version of the term with the placeholder instead of periods
+                term_with_placeholder = term.replace('.', PRESERVED_PERIOD_PLACEHOLDER)
+                # Replace the term in the parts list
+                for i, part in enumerate(titled_parts):
+                    if part == term:
+                        titled_parts[i] = term_with_placeholder
+
+            # Join parts
             name = ''.join(titled_parts)
 
-            # First pass: look for and protect known abbreviations
+            # Now normalize periods
             def handle_periods(match):
                 full_str = name  # Capture the full string for context
                 pos = match.start()
@@ -1867,6 +1885,10 @@ class FileRenamer:
                 return f'. {after_char}'
 
             name = re.sub(r'\.([a-zA-Z])', handle_periods, name)
+
+            # Restore periods from PRESERVED_PERIOD_PLACEHOLDER
+            name = name.replace(PRESERVED_PERIOD_PLACEHOLDER, '.')
+
             # Clean up any double spaces
             name = re.sub(r'\s+', ' ', name)
 
