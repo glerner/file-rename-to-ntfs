@@ -262,12 +262,23 @@ class FileRenamer:
     def _clean_abbreviation(cls, abbr: str) -> str:
         """
         Clean abbreviations for filename use:
-        1. Remove all periods (we want MD not M.D.)
-        2. Remove trailing whitespace
-        3. Store in standard form for case-insensitive matching
+        1. For known abbreviations in our list, remove all periods (we want MD not M.D.)
+        2. For units like 'min.' remove periods (we want 'min' not 'min.')
+        3. For other words, preserve the period as it may be intentional punctuation
+        4. Remove trailing whitespace
         """
-        # Remove periods and whitespace
-        return re.sub(r'\.', '', abbr.strip())
+        cleaned = abbr.strip()
+
+        # First remove periods for comparison with our abbreviations list
+        abbr_without_periods = re.sub(r'\.', '', cleaned)
+
+        # Check if it's in our known abbreviations list or standalone units list
+        if (abbr_without_periods.upper() in [a.upper() for a in cls.ABBREVIATIONS] or
+            abbr_without_periods.upper() in [u.upper() for u in cls.STANDALONE_UNITS]):
+            return abbr_without_periods
+        else:
+            # For regular words, just preserve them as is (periods will be handled elsewhere)
+            return cleaned
 
     def _clean_common_abbreviation_patterns(self, text):
         """
@@ -285,11 +296,13 @@ class FileRenamer:
         # Pattern 1: Multi-letter abbreviations with periods (M.D., Ph.D.)
         pattern1 = r'(?:^|(?<=\W))([A-Za-z](?:\.[A-Za-z])+\.?)(?=\W|$)'
 
-        # Pattern 2: Single-word abbreviations with trailing period (Dr., Sgt., FDR., JFK.)
-        pattern2 = r'(?:^|(?<=\W))([A-Za-z]{1,5}\.)(?=\s|$)'
+        # Pattern 2: Abbreviations with periods and internal spaces (e.g. 'Lt. Col.', 'Prof. Dr.')
+        # Process this BEFORE pattern 3 to catch multi-part abbreviations
+        pattern2 = r'(?:^|(?<=\W))([A-Za-z][A-Za-z]*\. [A-Za-z][A-Za-z0-9]*\.)(?=\W|$)'
 
-        # Pattern 3: Abbreviations with periods and internal spaces (e.g. 'Lt. Col.')
-        pattern3 = r'(?:^|(?<=\W))([A-Za-z]\. [A-Za-z][A-Za-z0-9]*\.)(?=\W|$)'
+        # Pattern 3: Common abbreviations with trailing period (Dr., Mr., Ms., etc.)
+        # Only match short words (1-3 letters) to avoid matching regular words with periods
+        pattern3 = r'(?:^|(?<=\W))([A-Za-z]{1,3}\.)(?=\s|$)'
 
         # Initialize result with the original text
         result = text
@@ -453,6 +466,7 @@ class FileRenamer:
         'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
         'VA', 'VT', 'WA', 'WI', 'WV', 'WY',
         # 'DE' Delaware conflicts with common Spanish word 'de'
+        # 'OH', 'OR', 'PA' conflict with English words
 
         # Canadian Provinces (excluding ON, a lowercase word)
         'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'QC', 'SK', 'YT',
@@ -747,9 +761,8 @@ class FileRenamer:
         'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being',
 
         # Spanish
-        'de', 'las', 'los', 'la', 'el', 'una', 'unas', 'unos',
-        'y', 'con', 'por', 'a', 'del', 'lo', 'que', 'su',
-        'para'
+        'a', 'con', 'de', 'del', 'el', 'la', 'las', 'lo', 'los',
+        'para', 'por', 'que', 'su', 'una', 'unas', 'unos', 'y'
     }
 
     # Characters that trigger capitalization of the next word
@@ -1019,6 +1032,13 @@ class FileRenamer:
 
         self.debug_print(f"\nProcessing: {filename!r}", level='normal')
 
+        # Normalize whitespace in the original filename
+        original_filename = filename
+        filename = re.sub(r'[\n\r\t\f\v]+', ' ', filename)  # Convert newlines and other whitespace to spaces
+        filename = re.sub(r' {2,}', ' ', filename)  # Collapse multiple spaces
+        if filename != original_filename:
+            self.debug_print(f"Normalized whitespace: {filename!r}", level='normal')
+
         # Split into name and extension with rules:
         # 1. Extensions cannot contain spaces
         # 2. Don't treat trailing periods as extension separators
@@ -1056,11 +1076,9 @@ class FileRenamer:
         # Debug processing steps
         self.debug_print(f"Splitting name: {name!r} (extension: {extension!r})", level='detail')
 
-        # Normalize whitespace
-        # self.debug_print(f"Before whitespace normalization: {name!r}", level='detail')  # Commented for easy re-enabling
-        name = re.sub(r'[\n\r\t\f\v]+', ' ', name)  # Convert newlines and other whitespace to spaces
+        # Whitespace already normalized at the beginning
+        # Just collapse any multiple spaces that might have been introduced during processing
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
-        # self.debug_print(f"After whitespace normalization:  {name!r}\n", level='detail')
 
         # Replace special characters
         # self.debug_print(f"Before replacements: {name!r}", level='normal')
@@ -1247,67 +1265,69 @@ class FileRenamer:
                 # - "I'd" -> "I'd" (contraction)
                 # Debug abbreviation check
                 self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
-                if len(titled_parts) >= 2:
+                try:
                     self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
-                elif titled_parts:
-                    self.debug_print(f"    titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
+                except IndexError:
+                    self.debug_print(f"    parts={titled_parts!r}")
 
                 if part.isalpha():
                     # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
-                    # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
-                    self.debug_print(f"  Compound pattern check:    titled_parts={titled_parts!r}    prev_part={prev_part!r}    current_part={part!r}    prev_is_period={prev_part == '.'}")
-                    if titled_parts:
-                        self.debug_print(f"    last_part={titled_parts[-1]!r}    is_abbrev={titled_parts[-1] in self.ABBREVIATIONS}    is_number={titled_parts[-1].isdigit()}    is_month={part.upper() in self.MONTH_FORMATS}")
-                    if (titled_parts and
-                        len(titled_parts) >= 2 and
-                        prev_part == '.' and
-                        (titled_parts[-2] in self.ABBREVIATIONS or
-                        (titled_parts[-2].isdigit() and part.upper() in self.MONTH_FORMATS.upper()))):
-                        self.debug_print(f"  ✓ Found compound pattern match in MAIN LOOP")
-                        self.debug_print(f"    titled_parts={titled_parts!r}")
+                    if prev_part == '.' and titled_parts:
+                        self.debug_print(f"  Compound check: prev={titled_parts[-2]!r}, current={part!r}")
+                    if prev_part == '.':
+                        try:
+                            if (titled_parts[-2] in self.ABBREVIATIONS or
+                               (titled_parts[-2].isdigit() and part.upper() in self.MONTH_FORMATS.upper())):
+                                self.debug_print(f"  ✓ Found compound pattern match: {titled_parts[-2]!r}.{part}")
+                        except IndexError:
+                            # Skip this block if titled_parts[-2] doesn't exist
+                            self.debug_print(f"    Skipping compound check: insufficient parts")
 
-                        # Get first abbreviation before loop
-                        first_abbrev = titled_parts[-2]    # e.g. "Lt"
-                        second_abbrev = None  # Initialize to None
-                        self.debug_print(f"    first_abbrev={first_abbrev!r}")
+                        try:
+                            # Get first abbreviation before loop
+                            first_abbrev = titled_parts[-2]    # e.g. "Lt"
+                            second_abbrev = None  # Initialize to None
 
-                        # Check if second part matches an abbreviation
-                        for abbr in self.ABBREVIATIONS:
-                            if part.upper() == abbr.upper():
-                                # Found abbreviation-period-abbreviation pattern
-                                self.debug_print(f"    Match found: part.upper()={part.upper()!r} == abbr.upper()={abbr.upper()!r}")
-                                second_abbrev = abbr  # Use case from ABBREVIATIONS
-                                self.debug_print(f"    Set second_abbrev={second_abbrev!r}")
+                            # Check if first part is an abbreviation
+                            first_abbrev_upper = first_abbrev.upper()
+                            is_first_part_abbrev = any(a.upper() == first_abbrev_upper for a in self.ABBREVIATIONS)
+                            if is_first_part_abbrev:
+                                self.debug_print(f"    First part {first_abbrev!r} is an abbreviation")
+                            
+                            if is_first_part_abbrev:
+                                # Only check second part if first part is an abbreviation
+                                for abbr in self.ABBREVIATIONS:
+                                    if part.upper() == abbr.upper():
+                                        # Found abbreviation-period-abbreviation pattern
+                                        second_abbrev = abbr  # Use case from ABBREVIATIONS
+                                        
+                                        # Combine abbreviations
+                                        try:
+                                            titled_parts[-2] = first_abbrev + second_abbrev
+                                            self.debug_print(f"  ✓ Combined: {first_abbrev!r}.{second_abbrev!r} → {titled_parts[-2]!r}")
+                                            # Remove the period
+                                            titled_parts.pop(-1)
+                                        except Exception as e:
+                                            self.debug_print(f"    ERROR in combine: {e}")
 
-                                # Combine abbreviations (no need to remove period since it wasn't added)
-                                self.debug_print(f"    Before combine: titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}")
-                                try:
-                                    titled_parts[-2] = first_abbrev + second_abbrev
-                                    self.debug_print(f"    After replace: titled_parts={titled_parts!r}")
-                                    # Remove the period
-                                    titled_parts.pop(-1)
-                                    self.debug_print(f"    After pop: titled_parts={titled_parts!r}")
-                                    self.debug_print(f"    After combine: titled_parts={titled_parts!r}")
-                                except Exception as e:
-                                    self.debug_print(f"    ERROR in combine: {e}")
+                                        # Update tracking variables
+                                        if titled_parts:
+                                            prev_part = titled_parts[-1]  # Now points to the combined abbreviation after period removal
+                                            prev_was_abbrev = True
+                                            prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
+                                        else:
+                                            self.debug_print(f"    WARNING: titled_parts is empty after combine operation")
+                                        break
 
-                                # Update tracking variables
-                                if titled_parts:
-                                    prev_part = titled_parts[-1]  # Now points to the combined abbreviation after period removal
-                                    prev_was_abbrev = True
-                                    prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
-                                else:
-                                    self.debug_print(f"    WARNING: titled_parts is empty after combine operation")
-                                break
+                            if not is_first_part_abbrev and part.upper() in [a.upper() for a in self.ABBREVIATIONS]:
+                                self.debug_print(f"    Not combined: {first_abbrev!r} is not an abbreviation, but {part!r} is")
+                            self.debug_print(f"    Result: {''.join(titled_parts)!r}")
 
-                        self.debug_print(f"    After loop:")
-                        self.debug_print(f"      second_abbrev={second_abbrev!r}")
-                        self.debug_print(f"      titled_parts={titled_parts!r}")
-                        self.debug_print(f"      prev_part={prev_part!r}")
-                        self.debug_print(f"      Combined result: {''.join(titled_parts)!r}")
-
-                        if second_abbrev is not None:
-                            continue
+                            if second_abbrev is not None:
+                                continue
+                        except IndexError:
+                            # Skip this block if titled_parts[-2] doesn't exist
+                            self.debug_print(f"    Skipping compound abbreviation check due to insufficient titled_parts")
 
                     # Otherwise check for normal abbreviation
                     elif titled_parts and prev_part == '.':
@@ -1617,12 +1637,9 @@ class FileRenamer:
             # Do one final check for trailing special characters
             name = self._clean_trailing_chars(name)
 
-        # If original had no spaces, remove spaces around special characters
+        # If original had no spaces, remove all spaces from the result
         if ' ' not in filename:
-            for char in self.special_chars - {' '}:
-                name = name.replace(f' {char} ', char)
-                name = name.replace(f' {char}', char)
-                name = name.replace(f'{char} ', char)
+            name = name.replace(' ', '')
 
         # Always use lowercase for extensions, whether known or unknown
         if extension:

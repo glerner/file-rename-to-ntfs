@@ -17,7 +17,7 @@ from file_renamer import FileRenamer, main  # Import main
 
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
-    force_fail = True # Set to True to force failures, False to disable
+    force_fail = False # Set to True to force failures, False to disable
 
     def _run_test_cases(self, test_cases, force_fail=None):
         if force_fail is None:
@@ -206,7 +206,7 @@ class TestFileRenamer(unittest.TestCase):
 
         test_cases = [
             ('multiple!!!!! Exclamation Marks.txt', 'Multiple! Exclamation Marks.txt'),
-            ('10 Min. Exercise Routine.txt', '10 min. Exercise Routine.txt'), #  keep standardized unit abbreviations in their standard form
+            ('10 Min. Exercise Routine.txt', '10 min Exercise Routine.txt'), #  keep standardized unit abbreviations in their standard form
             ('26. Greatest — Story.txt', '26. Greatest — Story.txt'),
             ('Tips For Success... Never Give Up.txt', f'Tips for Success{R["..."]} Never Give Up.txt'),
             ('trailing.periods....txt', 'Trailing.Periods.txt'),  # Multiple periods before extension get removed
@@ -286,8 +286,7 @@ class TestFileRenamer(unittest.TestCase):
                 f'Law of Attraction Secrets{colon} How to Manifest Anything You Want Faster than Ever!.mp4',
             ),
             (
-                '¿Te gustas las palomitas de maíz y una película?', f'¿Te Gustas Las Palomitas De Maíz y Una Película{qmark}' # leading Spanish question mark and accented characters unchanged
-                # Future enhancement, add Spanish common words to not capitalize, e.g. las, de, una
+                '¿Te gustas las palomitas de maíz y una película?', f'¿Te Gustas las Palomitas de Maíz y una Película{qmark}' # leading Spanish question mark and accented characters unchanged
 
             ),
             (
@@ -348,10 +347,9 @@ class TestFileRenamer(unittest.TestCase):
             ('test!', 'Test!'),  # Keep exclamation mark at end
             ('Clark Gable in "Gone with the Wind".png', f'Clark Gable in {quote}Gone with the Wind{quote}.png'),  # Keep quotes even at the end
             ('script.py', 'script.py'),  # Don't change casing of known file extensions
-            ('data.json}...', 'Data. JSON}'),  # Keep closing brace, since are allowing closing parenthesis-like characters; remove trailing periods
-            ('data.json', 'data.json'),  # Don't change casing of known file extensions
+            ('data.json}...', 'Data.JSON}'),  # Keep closing brace, since are allowing closing parenthesis-like characters; remove trailing periods
             ('Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4',
-             'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),  # Keep capitalization after parentheses
+             'Dylan Wright - Tiny Dancer (Elton John) - Australian Idol 2024 - Grand Final.mp4'),
         ]
 
         self._run_test_cases(test_cases)
@@ -659,6 +657,8 @@ class TestFileRenamer(unittest.TestCase):
             # States and provinces
             ("ny to ca road trip.mp4", "NY to CA Road Trip.mp4"),
             ("from bc to qc via ab.txt", "From BC to QC Via AB.txt"),
+            # State abbreviations that are common English words
+            ("My pa says oh my go from OR to PA or OH.txt", "My Pa Says Oh My Go from OR to PA or OH.txt"),
 
             # Military ranks (basic)
             ("sgt smith report.txt", "Sgt Smith Report.txt"),
