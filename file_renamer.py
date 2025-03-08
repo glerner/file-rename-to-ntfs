@@ -358,6 +358,59 @@ class FileRenamer:
         self.debug_print(f"[ABBREV] Preprocessing complete, result: {result!r}", level='verbose')
         return result
 
+    def _preserve_hyphenated_abbreviations(self, text):
+        """
+        Preserve hyphenated abbreviations by replacing them with temporary markers
+        before text splitting. This ensures abbreviations like TV-MA, PG-13, etc.
+        are treated as single tokens rather than being split at the hyphen.
+        
+        Args:
+            text: Text to process
+            
+        Returns:
+            Text with hyphenated abbreviations replaced by markers
+        """
+        # List of hyphenated abbreviations to preserve
+        hyphenated_abbrevs = [
+            'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
+            'X-Ray'  # Add any other hyphenated abbreviations here
+        ]
+        
+        # Create a unique marker for each abbreviation
+        self._hyphen_abbrev_markers = {}
+        for i, abbr in enumerate(hyphenated_abbrevs):
+            marker = f"__HYPHEN_ABBR_{i}__"
+            self._hyphen_abbrev_markers[abbr] = marker
+            # Replace the abbreviation with its marker (case-insensitive)
+            text = re.sub(rf'\b{re.escape(abbr)}\b', marker, text, flags=re.IGNORECASE)
+            self.debug_print(f"[HYPHEN_ABBREV] Checking for {abbr!r} in {text!r}", level='verbose')
+        
+        return text
+    
+    def _restore_hyphenated_abbreviations(self, parts):
+        """
+        Restore hyphenated abbreviations from their temporary markers after text splitting.
+        
+        Args:
+            parts: List of parts to process
+            
+        Returns:
+            List of parts with markers replaced by original abbreviations
+        """
+        if not hasattr(self, '_hyphen_abbrev_markers'):
+            return parts
+            
+        restored_parts = []
+        for part in parts:
+            restored = part
+            for abbr, marker in self._hyphen_abbrev_markers.items():
+                if marker in part:
+                    restored = part.replace(marker, abbr)
+                    self.debug_print(f"[HYPHEN_ABBREV] Restored {marker!r} to {abbr!r}", level='verbose')
+                    break
+            restored_parts.append(restored)
+        return restored_parts
+        
     def _clean_date_patterns_with_periods(self, text):
         """
         Detect and clean date patterns with periods.
@@ -450,29 +503,30 @@ class FileRenamer:
         # Military Ranks (no periods)
         'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
         'Maj', 'Adm', 'Cmdr', 'Brig', # More ranks
-        'USMC', 'USN', 'USAF', 'USA',  # Service branches
+        'USMC', 'USN', 'USAF',  # Service branches
 
         # Movie/TV Ratings (no periods)
         'TV', 'G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
+        # not handled properly, gets broken up at hyphen into parts
 
         # TV Networks
         'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS',
         'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC',
 
-        # US States (excluding those that conflict with common words)
+        # US States (excluding those that conflict with common words, see KEEP_CAPITALIZED_IF_ALLCAPS)
         'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'FL',
-        'GA', 'HI', 'ID', 'IL', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI',
+        'GA', 'ID', 'IL', 'KS', 'KY', 'MD', 'MI',
         'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV',
-        'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
-        'VA', 'VT', 'WA', 'WI', 'WV', 'WY',
+        'NY', 'OK', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
+        'VA', 'VT', 'WI', 'WV', 'WY',
         # 'DE' Delaware conflicts with common Spanish word 'de'
-        # 'OH', 'OR', 'PA' conflict with English words
+        # 'HI', 'LA', 'MA', 'ME', 'OH', 'OR', 'PA' conflict with English words
 
         # Canadian Provinces (excluding ON, a lowercase word)
         'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'QC', 'SK', 'YT',
 
         # Countries and Regions
-        'UK', 'USA', 'US', 'EU', 'UAE', 'USSR',
+        'UK', 'USA', 'EU', 'UAE', 'USSR',  # 'US' moved to KEEP_CAPITALIZED_IF_ALLCAPS
 
         # Time/Date (AM and PM handled special case)
         'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT', 'UTC',
@@ -480,8 +534,8 @@ class FileRenamer:
         # Government/Organizations
         'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOE', 'DOJ', 'FBI', 'FCC',
         'FDA', 'FEMA', 'FTC', 'IRS', 'NASA', 'NOAA', 'NSA', 'TSA', 'USDA',
-        'EPA', 'ICE', 'SSA', 'UN', 'USPS',
-        # not 'SEC', 'sec' is a numbered unit
+        'EPA', 'SSA', 'UN', 'USPS',
+        # not 'SEC', 'sec' is a numbered unit, 'ICE'
 
         # Mexican States (official abbreviations)
         'AGS',  # Aguascalientes
@@ -539,12 +593,12 @@ class FileRenamer:
         '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
 
         # Medical/Scientific
-        'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC', 'STEM', # but also flower stem
+        'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
         'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER',
 
         # Business/Organizations
         'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
-        'VP', 'vs',
+        'VP',
         # Note: removed VS to avoid confusion,
         # removed HR (human resources) since conflicts with hr (hour)
 
@@ -752,7 +806,7 @@ class FileRenamer:
         'over', 'past', 'to', 'up', 'upon', 'with',
 
         # Common Particles
-        'as', 'if', 'how', 'than', 'v', 'vs', 'vs.',  # v/vs/vs. for versus
+        'as', 'if', 'how', 'than', 'v', 'vs',   # v/vs for versus
 
         # Common Words in Media Titles
         'part', 'vol', 'feat', 'ft', 'remix',
@@ -763,6 +817,52 @@ class FileRenamer:
         # Spanish
         'a', 'con', 'de', 'del', 'el', 'la', 'las', 'lo', 'los',
         'para', 'por', 'que', 'su', 'una', 'unas', 'unos', 'y'
+    }
+
+    # Dictionary for words that should only be kept capitalized if they appear in all caps
+    # Otherwise they should be converted to lowercase
+    KEEP_CAPITALIZED_IF_ALLCAPS = {
+        # Alphabetically sorted by key
+        'AS': 'as',   # American Samoa - 'as' conjunction/adverb
+        'BY': 'by',   # Belarus - 'by' preposition
+        'CAMP': 'camp', # Campeche (Mexican state) - 'camp' English word
+        'COL': 'Col',  # Colima - 'Col' Colonel
+        'DE': 'de',  # Delaware - 'de' Spanish (of/from)
+        'DO': 'do',   # Dominican Republic - 'do' verb
+        'DOE': 'doe', # Department of Energy - 'doe' female deer
+        'HE': 'he',   # Hesse, Germany - 'he' pronoun
+        'HI': 'hi',  # Hawaii - 'hi' English exclamation
+        'HR': 'hr',   # Human Resources - 'hr' hour
+        'ICE': 'ice', # Immigration and Customs Enforcement - 'ice' frozen water
+        'IN': 'in',  # Indiana - 'in' English preposition
+        'IS': 'is',   # Information Systems - 'is' verb
+        'IT': 'it',   # Information Technology - 'it' pronoun
+        'LA': 'la',  # Louisiana - 'la' English exclamation
+        'MA': 'ma',  # Massachusetts - 'ma' mother
+        'ME': 'me',  # Maine - 'me' English pronoun
+        'MS': 'Ms',   # Mississippi - 'Ms' title
+        'NAY': 'nay', # Nayarit (Mexican state) - 'nay' English word
+        'NO': 'no',   # Norway - 'no' negative
+        'NOR': 'nor', # Norway - 'nor' conjunction
+        'OH': 'oh',  # Ohio - 'oh' English exclamation
+        'ON': 'on',  # Ontario - 'on' English preposition
+        'OR': 'or',  # Oregon - 'or' English conjunction
+        'PA': 'pa',  # Pennsylvania - 'pa' Spanish/father in several languages
+        'PC': 'pc',   # Personal Computer - 'pc' piece
+        'PST': 'pst', # Pacific Standard Time - 'pst' exclamation
+        'RAM': 'ram', # Random Access Memory - 'ram' male sheep
+        'SEC': 'sec', # Securities and Exchange Commission - 'sec' second
+        'SIN': 'sin',  # Sinaloa - 'sin' English word
+        'SO': 'so',   # Somalia - 'so' adverb
+        'SON': 'son',  # Sonora - 'son' English word
+        'STEM': 'stem',  # Science, Technology, Engineering, Math - 'stem' plant part
+        'TAB': 'tab',  # Tabasco - 'tab' word
+        'TO': 'to',   # Toronto - 'to' preposition
+
+        'UP': 'up',   # Uttar Pradesh, India - 'up' preposition
+        'US': 'us',  # United States - 'us' English word
+        'VER': 'ver', # Veracruz (Mexican state) - 'ver' version abbreviation
+        'WA': 'wa',  # Washington - 'wa' Spanish dialect word
     }
 
     # Characters that trigger capitalization of the next word
@@ -1158,6 +1258,7 @@ class FileRenamer:
             # Only process the name part, not the extension
             name = self._clean_common_abbreviation_patterns(name)
             name = self._clean_date_patterns_with_periods(name)
+            name = self._preserve_hyphenated_abbreviations(name)
 
             # Build pattern that matches our word boundaries
             split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
@@ -1171,6 +1272,9 @@ class FileRenamer:
 
             # Filter out empty parts
             parts = [p for p in test_parts if p != '']
+            
+            # Restore hyphenated abbreviations that were replaced with markers
+            parts = self._restore_hyphenated_abbreviations(parts)
 
             titled_parts = []
             prev_part = ''
@@ -1293,14 +1397,14 @@ class FileRenamer:
                             is_first_part_abbrev = any(a.upper() == first_abbrev_upper for a in self.ABBREVIATIONS)
                             if is_first_part_abbrev:
                                 self.debug_print(f"    First part {first_abbrev!r} is an abbreviation")
-                            
+
                             if is_first_part_abbrev:
                                 # Only check second part if first part is an abbreviation
                                 for abbr in self.ABBREVIATIONS:
                                     if part.upper() == abbr.upper():
                                         # Found abbreviation-period-abbreviation pattern
                                         second_abbrev = abbr  # Use case from ABBREVIATIONS
-                                        
+
                                         # Combine abbreviations
                                         try:
                                             titled_parts[-2] = first_abbrev + second_abbrev
@@ -1486,6 +1590,12 @@ class FileRenamer:
                 # Handle abbreviations - check if this word is an abbreviation
                 # If the previous word was also an abbreviation, we'll handle this
                 # one separately rather than trying to join them
+                #
+                # FUTURE ENHANCEMENT: Support user-provided file for custom abbreviations that overrules
+                # the default processing. This would allow users to specify their own abbreviation handling
+                # after all the standard abbreviation and unit processing is done. # Suggestion: instead of putting 'ON' in the file as initials,
+                # overruling the common word, users could specify 'Mr.ON' or 'Ms.ON' in
+                # their custom file to ensure it's treated as a proper noun.
                 test_word = word.upper()
                 j = i
 
@@ -1510,10 +1620,22 @@ class FileRenamer:
                             abbrev_debug = f"✓ {found_abbrev!r} (no periods)"
                             break
 
-                # If no match but it's 1-3 letters and all uppercase, treat as abbreviation (e.g. initials FDR, JFK)
-                if not found_abbrev and len(word) <= 3 and word.isupper():
-                    found_abbrev = word
-                    abbrev_debug = f"✓ {found_abbrev!r} (uppercase 1-3 letters)"
+                # Check if it's in our special dictionary of words that should only be kept capitalized if all caps
+                # Only run this if we haven't already found an abbreviation through other methods
+                if not found_abbrev:
+                    abbrev_upper = word.upper()
+                    if abbrev_upper in self.KEEP_CAPITALIZED_IF_ALLCAPS:
+                        # For special abbreviations, keep capitalized only if original was all caps
+                        if part.isupper():
+                            # Original was all caps, treat as abbreviation
+                            found_abbrev = abbrev_upper
+                            abbrev_debug = f"✓ {found_abbrev!r} (special case - kept uppercase)"
+                        else:
+                            # Original wasn't all caps, don't treat as abbreviation
+                            # Let it fall through to normal capitalization rules
+                            self.debug_print(f"  Not treating {word!r} as abbreviation (not all caps)")
+
+                # As much as would like to handle initials (FDR, JFK), can't distinguish from all-uppercase common words (THE, FOX, BUT)
 
                 # If at end of text and no match, try with trailing period
                 if not found_abbrev and j >= len(parts) - 1:

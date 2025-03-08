@@ -13,9 +13,15 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
   - Special terms like 'til and rock'n'roll
   - Common lowercase words (a, an, the, etc.)
   - Preserves common abbreviations (MD, M.D., PG-13, DES, NY)
+  - Handles common military ranks (SGT, Sgt, Sgt.)
+  - Handles common units (min, g, km, lbs, mpg or L/100km etc.)
+  - Handles some date formats (2024-01-01, 2024/01/01, 2024.01.01, 2-23-2024 but doesn't validate dates)
 - Handles special cases like multiple spaces and trailing punctuation
+- Normalizes whitespace (converts tabs, newlines, and other whitespace to spaces)
+- Intelligently handles compound abbreviations (e.g., Lt.Col becomes LtCol)
 - Preserves file names of known programming language file extensions in their original case, but extensions themselves are always converted to lowercase
-- Debug mode for detailed operation logging
+- Properly handles filenames with no spaces (preserves the no-space format)
+- Debug mode for detailed operation logging with configurable verbosity
 - Comprehensive test suite
 
 Note that UTF-8 (macOS, Linux) characters convert to different UTF-16 characters (NTFS) depending on the operating system and users's preferred encoding settings.
@@ -115,12 +121,15 @@ The test suite includes cases for:
 
 ## Character Substitutions
 
-The script uses the following character substitutions:
+The script uses several character substitutions to maintain visual similarity while ensuring NTFS compatibility. These include:
 - `\` → `⧵` (Reverse Solidus Operator)
 - `:` → `ː` (Modifier Letter Triangular Colon)
 - `*` → `✱` (Heavy Asterisk)
 - `?` → `⁇` (Reversed Question Mark)
 - `"` → `＂` (Full Width Quotation Mark)
+- `'` → `ʼ` (Modifier Letter Apostrophe) - Used for contractions and possessives
+- `'` → `'` (Left Single Quotation Mark) - Preserved if in original text
+- `'` → `'` (Right Single Quotation Mark) - Preserved if in original text
 - `<` → `❬` (Left Black Lenticular Bracket)
 - `>` → `❭` (Right Black Lenticular Bracket)
 - `<<` → `《` (Left Double Angle Bracket)
@@ -130,7 +139,7 @@ The script uses the following character substitutions:
 - `{{` → `⦃` (Left White Curly Bracket)
 - `}}` → `⦄` (Right White Curly Bracket)
 - `|` → `│` (Box Drawings Light Vertical)
-- `&` → `and`
+- `&` → ` and `
 - `$` → `＄` (Full Width Dollar Sign)
 - `!` → `!` (Collapses multiple exclamation marks)
 - `...` → `…` (Horizontal Ellipsis)
@@ -151,6 +160,13 @@ The script applies smart title case rules:
 ## Unit Formatting Rules
 
 The script applies special case rules for units:
+
+### Units vs. Abbreviations Priority
+When a text could be interpreted as either a unit or an abbreviation, units are given priority. For example:
+- `SEC` could be "Securities and Exchange Commission" or "seconds" - treated as a unit (seconds)
+- `HR` could be "Human Resources" or "hour" - treated as a unit (hour)
+
+This prioritization helps maintain consistency in filenames with measurements and technical specifications.
 
 ### Bits and Bytes (b/B)
 Since we cannot determine whether a unit refers to bits or bytes from the text alone, we preserve the original case of 'b' or 'B' while enforcing proper case for the SI unit prefix symbols:
