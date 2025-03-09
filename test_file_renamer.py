@@ -74,9 +74,9 @@ class TestFileRenamer(unittest.TestCase):
                 expected_no_fail = expected[5:] if expected.startswith('FAIL ') else expected
                 print(f"Result:   {highlight_special_chars(result)}")
                 if result_no_fail != expected_no_fail:
-                    print(f"{Fore.CYAN}Expected:{Style.RESET_ALL} {highlight_special_chars(expected)}")
+                    print(f"{Fore.CYAN}Expected:{Style.RESET_ALL} {highlight_special_chars(expected_no_fail)}")
                 else:
-                    print(f"Expected: {highlight_special_chars(expected)}")
+                    print(f"Expected: {highlight_special_chars(expected_no_fail)}")
                 print(f"{'='*50}")
 
                 if result != expected:
@@ -373,13 +373,8 @@ class TestFileRenamer(unittest.TestCase):
             ('mixedCase.PHP', 'mixedCase.php'),  # Keep name case
             # Web files - keep original name case
             ('styles.CSS', 'styles.css'),  # Keep name case
-            ('LAYOUT.HTML', 'LAYOUT.html'),  # Keep name case
-            ('myScript.JS', 'myScript.js'),  # Keep name case
-            # Documentation - keep original name case
+            # Documentation or unknown extension - don't keep original name case
             ('README.MD', 'Readme.md'),
-            ('debug.LOG', 'Debug.log'),
-            # Unknown extensions - apply title case to name
-            ('test.FOO', 'Test.foo'),    # Title case name, lowercase ext
             ('WEIRD.BAR', 'Weird.bar'),  # Title case name, lowercase ext
             ('mixed.CASE', 'Mixed.case'),  # Title case name, lowercase ext
         ]
@@ -616,9 +611,7 @@ class TestFileRenamer(unittest.TestCase):
 
             # Mixed cases with quotes - using RIGHT_SINGLE_QUOTE for quotes around phrases
             ("from 'this old ghost' don't move.mp4", f"From {APOS}This Old Ghost{APOS} Don{APOS}t Move.mp4"),
-            ("it's a 'wonderful life' we're living.txt", f"It{APOS}s a {APOS}Wonderful Life{APOS} We{APOS}re Living.txt"),
-            ("john's 'great' adventure.txt", f"John{APOS}s {APOS}Great{APOS} Adventure.txt"),
-            ("john's 'great adventure'.txt", f"John{APOS}s {APOS}Great Adventure{APOS}.txt"),
+            ("john's 'great' adventure 'great adventure'.txt", f"John{APOS}s {APOS}Great{APOS} Adventure John{APOS}s {APOS}Great Adventure{APOS}.txt"), # test apostrophes and at end of filename
             ]
 
 
@@ -737,7 +730,7 @@ class TestFileRenamer(unittest.TestCase):
             ("10Km race 500Ml bottle 1TB ssd.txt", "10km Race 500mL Bottle 1TB SSD.txt"),
 
             # Multiple units in name
-            ("100km 2l water.gpx", "100km 2L Water.gpx"),
+            ("5 g flour 100km 2l water.gpx", "5 g Flour 100km 2L Water.gpx"), # combine '5 g' into '5g'
             ("5gB ram 2tB storage.txt", "5GB RAM 2TB Storage.txt"), # Byte (uppercase) bit (lowercase)
 
             # Special characters

@@ -17,10 +17,14 @@ Future possible improvements:
 - Add option to convert to ASCII-only filenames (if needed for legacy systems)
 - Current implementation preserves UTF-8/UTF-16 which works well with modern systems, including media files from sources like YouTube. Consider exploring how to use other character mappings.
 - Designed for English-speaking users. Limited foreign language support currently included, with potential for future enhancements through community contributions.
+- Add configuration file support for customizing preserved terms, character replacements, and other settings
 
 Author: George Lerner with Cascade AI
 Date: 2025-01-27
+Version: 0.9.0 (Beta)
 """
+# fmt: off
+__version__ = "0.9.0"  # Beta - Close to first stable release
 
 import os
 import re
@@ -296,7 +300,6 @@ class FileRenamer:
         This preprocessing step handles abbreviations with periods before
         the text is split into tokens for further processing.
         """
-        self.debug_print(f"[ABBREV] Processing text: {text!r}", level='verbose')
 
         # Patterns for letter-based abbreviations with periods
         # We'll use multiple patterns to handle different cases
@@ -1400,17 +1403,17 @@ class FileRenamer:
             # Only process the name part, not the extension
             name = self._clean_common_abbreviation_patterns(name)
             name = self._clean_date_patterns_with_periods(name)
-            
+
             # Pre-processing: Add spaces between adjacent preserved term markers
             # This ensures they'll be properly split into separate parts
             adjacent_markers_found = False
             while re.search(r'(__PRESERVED_TERM_\d+__)(__PRESERVED_TERM_\d+__)', name):
                 if not adjacent_markers_found:
-                    self.debug_print(f"[SPLIT] Found adjacent markers in: {name}", level='normal')
                     adjacent_markers_found = True
                 name = re.sub(r'(__PRESERVED_TERM_\d+__)(__PRESERVED_TERM_\d+__)', r'\1 \2', name)
-            
-            self.debug_print(f"[SPLIT] After adding spaces between adjacent markers: {name}", level='normal')
+
+            if adjacent_markers_found:
+                self.debug_print(f"[SPLIT] After adding spaces between adjacent markers: {name}", level='normal')
 
             # Build pattern that matches our word boundaries
             word_boundary_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
@@ -1434,6 +1437,9 @@ class FileRenamer:
             prev_was_abbrev = False
             prior_abbreviation = None
             prior_date_part = None  # Track date parts like prior_abbreviation
+
+            # Initialize processed_parts to track which parts have been processed
+            processed_parts = [None] * len(parts)
 
             last_real_word = None
             for part in parts:
@@ -1532,12 +1538,13 @@ class FileRenamer:
                 # - "m.d" -> "MD" (abbreviation)
                 # - "10d" -> "10d" (unit)
                 # - "I'd" -> "I'd" (contraction)
-                # Debug abbreviation check
-                self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
-                try:
-                    self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
-                except IndexError:
-                    self.debug_print(f"    parts={titled_parts!r}")
+                # Only debug abbreviation check if this might be an abbreviation
+                if part.isalpha() or (len(part) > 1 and any(c.isalpha() for c in part)):
+                    self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
+                    try:
+                        self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
+                    except IndexError:
+                        self.debug_print(f"    Error Checking Abbreviation:    titled_parts={titled_parts!r}")
 
                 if part.isalpha():
                     # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
@@ -1643,25 +1650,28 @@ class FileRenamer:
                 # This must come before abbreviation check to handle concatenated formats
                 if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω][h]?', word_lower) or  # Standard units (including compound like wh)
                     re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or      # Date formats
-                    word_lower in self.STANDALONE_UNITS):                  # Standalone units
+                    word_lower in self.STANDALONE_UNITS or                # Standalone units
+                    word_lower.isdigit()):                               # Standalone digits for space-separated units
                     self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
-                    self.debug_print(f"  Context: parts[{i}] in {parts!r}")
+                    self.debug_print(f"  Context: parts[{i}] in {parts[max(0,i-1):min(len(parts),i+3)]!r}")
 
                     # Initialize unit tracking
-                    j = i  # Current position
+                    unit_end_index = i  # Index of the last part of this unit (initially just the current part)
                     unit_parts = [part]  # Track all parts of the unit
                     test_word = word_lower
                     original_parts = [part]
 
                     # Check for space-separated units (e.g. "5 kb" or "5 g")
-                    if i + 2 < len(parts) and parts[i+1].strip() == ' ':
+                    if parts[i].strip().isdigit() and i + 2 < len(parts) and parts[i+1].strip() == ' ':
+                        self.debug_print(f"  Checking for space-separated unit at index {i}: {parts[i:i+3]!r}")
+                        # Check if the part after the space is a valid unit
                         next_part = parts[i+2].strip().lower()
-                        if re.match(r'^[kmgtw]?[wvajnlhzbf]', next_part):
+                        if re.match(r'^[kmgtw]?[wvajnlhzbfg]', next_part) or next_part in self.STANDALONE_UNITS:
                             # Include space and unit part
                             unit_parts.extend([parts[i+1], parts[i+2]])
                             original_parts.extend([parts[i+1], parts[i+2]])
                             test_word = word_lower + next_part
-                            j = i + 2
+                            unit_end_index = i + 2  # Update to include the space and unit part
                             self.debug_print(f"  Found space-separated unit: {unit_parts!r}")
 
                     self.debug_print(f"  Testing unit pattern: {test_word!r}  Original parts: {original_parts!r}")
@@ -1713,7 +1723,9 @@ class FileRenamer:
                             self.debug_print(f"    Applied formatter: {test_word!r} -> {formatted!r}")
 
                             # Mark all parts that make up this unit as processed
-                            for idx in range(i, j+1):
+                            unit_start_index = i  # Start index of the unit (current part)
+                            self.debug_print(f"  Marking parts from unit_start_index={unit_start_index} to unit_end_index={unit_end_index} as processed")
+                            for idx in range(unit_start_index, unit_end_index+1):
                                 processed_parts[idx] = f"part of {unit_debug}"
 
                             # Add the formatted unit preserving any spaces
@@ -1731,7 +1743,14 @@ class FileRenamer:
 
                             self.debug_print(f"  {unit_debug}")
                             found_unit = True
-                            i = j  # Move to end of unit
+                            # Don't modify loop counter directly, we'll use processed_parts to skip
+                            # already processed parts in the next iterations
+                            self.debug_print(f"  Found unit at index {i}, marked parts {i} to {j} as processed")
+                            self.debug_print(f"  Next parts to process: {parts[j+1:]!r}" if j+1 < len(parts) else "  No more parts to process")
+                            self.debug_print(f"  Current filename being processed: {name!r}")
+                            self.debug_print(f"  DEBUG: titled_parts after unit found: {titled_parts!r}")
+                            # Important: Continue with the main loop after processing this unit
+                            # This only breaks out of the inner loop that was checking for unit patterns
                             break
 
                     if not found_unit:
@@ -1749,8 +1768,23 @@ class FileRenamer:
                                 continue
                         self.debug_print(f"  No unit pattern match found")
 
-                if found_unit:
-                    continue
+                # Skip this part if it's already been processed as part of a unit
+                # This replaces the previous 'if found_unit: continue' approach
+                try:
+                    if processed_parts[i] and processed_parts[i].startswith('part of'):
+                        self.debug_print(f"  Skipping already processed part: {parts[i]!r} at index {i}")
+                        continue
+                except Exception as e:
+                    self.debug_print(f"  ERROR checking processed_parts[{i}]: {e}")
+
+                try:
+                    if found_unit:
+                        self.debug_print(f"  After unit processing: titled_parts={titled_parts!r}")
+                        self.debug_print(f"  Remaining parts to process: {parts[i+1:]!r}")
+                    else:
+                        self.debug_print(f"  No unit found, continuing with normal word processing for {word!r}")
+                except Exception as e:
+                    self.debug_print(f"  ERROR in found_unit check: {e}")
 
                 # Handle abbreviations - check if this word is an abbreviation
                 # If the previous word was also an abbreviation, we'll handle this
@@ -1996,7 +2030,9 @@ class FileRenamer:
         for item in self.directory.iterdir():
             if item.is_file():
                 original_name = item.name
+                self.debug_print(f"\n\nBefore clean_filename: {original_name!r}", level='normal')
                 new_name = self._clean_filename(original_name)
+                self.debug_print(f"After clean_filename: {original_name!r} -> {new_name!r}", level='normal')
 
                 # Skip if no change needed
                 if original_name == new_name:
@@ -2107,4 +2143,11 @@ FileRenamer.validate_replacements()
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print(f"\nUnhandled exception: {type(e).__name__}: {e}")
+        print("\nDetailed traceback:")
+        print(traceback.format_exc())
+        print("\nPlease report this error with the above information.")
