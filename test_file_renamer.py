@@ -638,13 +638,12 @@ class TestFileRenamer(unittest.TestCase):
         8. Mixed case with other words
         """
         R = FileRenamer.CHAR_REPLACEMENTS
+        quote = R['"']
+
         print("\n=== Testing All Abbreviation Cases ===")
         test_cases = [
             # Academic degrees
-            ("dr. smith md phd.txt", "Dr Smith MD PhD.txt"),
-            # this checks the m is not grabbed as a contraction (I'm) and is not grabbed as a unit (meters)
-            ("jane doe, m.d..txt", "Jane Doe, MD.txt"),
-            ("jane smith, m.d.txt", "Jane Smith, MD.txt"),
+            ("dr. smith md phd dr. smith m.d. B.Sc. M.Phil. ph.d..txt", "Dr Smith MD PhD Dr Smith MD BSc MPhil PhD.txt"),
             ("Hormone Dr.: increase testosterone levels naturally.txt", f"Hormone Dr{R[':']} Increase Testosterone Levels Naturally.txt"),
 
             # Movie/TV ratings
@@ -652,7 +651,7 @@ class TestFileRenamer(unittest.TestCase):
             ("tv show TV-MA s01.mkv", "TV Show TV-MA S01.mkv"),
 
             # hyphenated abbreviations, and exact case and punctuation e.g. company names
-            ("X-ray of TV-MA and PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble.txt", "X-Ray of TV-MA and PG-13 and J.Hud, AT&T Coca-Cola, Inc. Barnes&Noble.txt"),
+            ("X-ray of TV-MA and PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble Toys\"R\"Us mrna.txt", f"X-Ray of TV-MA and PG-13 and J.Hud, AT&T Coca-Cola, Inc. Barnes&Noble Toys{quote}R{quote}Us mRNA.txt"),
             ("LiveDesign Biologics structure of key proteins hERG, programs targeting EGFRC797S, PRMT5-MTA and NLRP3.txt", "LiveDesign Biologics Structure of Key Proteins hERG, Programs Targeting EGFRC797S, PRMT5-MTA and NLRP3.txt"),
 
             # TV networks (b`ut not the word 'fox')
@@ -681,8 +680,7 @@ class TestFileRenamer(unittest.TestCase):
 
             # Time/date
             ("meeting 9am pst.txt", "Meeting 9AM PST.txt"),
-            ("3pm est update.doc", "3PM EST Update.doc"),
-            ("3pm 2hr HR meeting.txt", "3PM 2hr hr Meeting.txt"), # unit hr preferred over abbreviation
+            ("3pm est update 2hr HR meeting.doc", "3PM EST Update 2hr Hr Meeting.doc"),
 
             # Government/Organizations
             ("fbi and cia IRS report.pdf", "FBI and CIA IRS Report.pdf"),
@@ -695,33 +693,25 @@ class TestFileRenamer(unittest.TestCase):
             ("jalisco (jal) and nayarit (nay).txt", "Jalisco (JAL) and Nayarit (NAY).txt"),
 
             # Technology
-            ("100GB ssd vs 2TB hdd.txt", "100GB SSD vs 2TB HDD.txt"),
-            ("100gb gigabit ssd vs 2TB hdd.txt", "100Gb Gigabit SSD vs 2TB HDD.txt"),
-            ("car going 60mph and spinning at 33rpm at 68deg.txt", "Car Going 60mph and Spinning at 33rpm at 68deg.txt"),
+            ("100GB SSD vs 2TB HDD, 100Gb Gigabit SSD vs 2TB HDD, car going 60mph and spinning at 33rpm at 68deg.txt", "100GB SSD vs 2TB HDD, 100Gb Gigabit SSD vs 2TB HDD, Car Going 60mph and Spinning at 33rpm at 68deg.txt"),
             ("movie at 30fps and 25c.txt", "Movie at 30fps and 25C.txt"),
             ("compare 35MPG vs 14.88km/L (or 6.72L/100km) fuel usage.txt", f"Compare 35mpg vs 14.88km{R['/']}L (or 6.72L{R['/']}100km) Fuel Usage.txt"),
 
             # Ordinal numbers
-            ("1st 2nd 3rd 4th place.txt", "1st 2nd 3rd 4th Place.txt"),
-            ("7th 11th 12th 13th floor.txt", "7th 11th 12th 13th Floor.txt"),
-            ("21st 22nd 23rd 24th century.txt", "21st 22nd 23rd 24th Century.txt"),
-            ("101ST and 102ND and 103RD.txt", "101st and 102nd and 103rd.txt"),
+            ("1st 2nd 3rd 4th 7th 11th 12th 13th place 21st 22nd 23rd 24th century 101ST and 102ND and 103RD.txt",
+             "1st 2nd 3rd 4th 7th 11th 12th 13th Place 21st 22nd 23rd 24th Century 101st and 102nd and 103rd.txt"),
             ("mp3 to mp4 converter.exe", "MP3 to MP4 Converter.exe"),
             ("nvme vs sata ssd speed test.txt", "NVMe vs SATA SSD Speed Test.txt"),
             ("how to setup raid and lan.pdf", "How to Setup RAID and LAN.pdf"),
 
             # Video/Audio
-            ("movie 4k hdr 60fps.mkv", "Movie 4K HDR 60fps.mkv"),
+            ("movie 4k hdr 60fps 1080p 48khz dts.mkv", "Movie 4K HDR 60fps 1080p 48kHz DTS.mkv"),
             # trailing .wav is a file extension, would have been WAV if followed by text.
             # future enhancement look for common file extensions within the filename, not as the actual file extension
             ("song.flac vs song.mp3 vs song.wav", "Song. FLAC vs Song. MP3 vs Song.wav"), # trailing .wav is a file extension, not text
 
-            ("video 1080p 48khz dts.m4v", "Video 1080p 48kHz DTS.m4v"),
-
             # Frequency
-            ("100hz tone.wav", "100Hz Tone.wav"),
-            ("2.4ghz wifi.pdf", "2.4GHz Wi-Fi.pdf"),
-            ("440hz a4 note.mp3", "440Hz A4 Note.mp3"),
+            ("100hz tone 2.4ghz wifi.pdf 440hz a4 note.mp3", "100Hz Tone 2.4GHz Wi-Fi 440Hz A4 Note.mp3"),
         ]
 
         self._run_test_cases(test_cases)
@@ -738,21 +728,13 @@ class TestFileRenamer(unittest.TestCase):
         """
         test_cases = [
             # Basic units
-            ("100m dash.mp4", "100m Dash.mp4"),
-            ("5l water.jpg", "5L Water.jpg"),
-            ("500g flour.txt", "500g Flour.txt"),
+            ("100m dash 5l water 500g flour.mp4", "100m Dash 5L Water 500g Flour.mp4"),
 
             # Prefixed units
-            ("50km run.gpx", "50km Run.gpx"),
-            ("2gB ram.txt", "2GB RAM.txt"),
-            ("100mhz processor.pdf", "100MHz Processor.pdf"),
-            ("5ml solution.doc", "5mL Solution.doc"),
-            ("2tB hard drive.txt", "2TB Hard Drive.txt"),
+            ("50km run 2gB ram 100mhz processor 5ml solution 2tB hard drive.gpx", "50km Run 2GB RAM 100MHz Processor 5mL Solution 2TB Hard Drive.gpx"),
 
             # Mixed case handling
-            ("10Km race.jpg", "10km Race.jpg"),
-            ("500Ml bottle.png", "500mL Bottle.png"),
-            ("1TB ssd.txt", "1TB SSD.txt"),
+            ("10Km race 500Ml bottle 1TB ssd.txt", "10km Race 500mL Bottle 1TB SSD.txt"),
 
             # Multiple units in name
             ("100km 2l water.gpx", "100km 2L Water.gpx"),

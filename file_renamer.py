@@ -162,8 +162,8 @@ class FileRenamer:
     PRESERVED_TERMS = [
         # TV/Movie ratings (okay if some do not need special handling)
         'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
-        # Medical terms
-        'X-Ray', 'LiveDesign Biologics', 'hERG', 'EGFRC797S', 'PRMT5-MTA', 'NLRP3',
+        # Medical or chemical terms
+        'X-Ray', 'mRNA', 'LiveDesign Biologics', 'hERG', 'EGFRC797S', 'PRMT5-MTA', 'NLRP3',
         # Company names with specific capitalization/punctuation
         'AT&T', 'Barnes&Noble', 'Coca-Cola, Inc.', 'Toys"R"Us', 'J.Hud'
     ]
@@ -266,25 +266,24 @@ class FileRenamer:
         'cause', # because
     }
 
-    # Common abbreviations to preserve in uppercase
+    # Common abbreviations to preserve
     @classmethod
     def _clean_abbreviation(cls, abbr: str) -> str:
         """
         Clean abbreviations for filename use:
-        1. For known abbreviations in our list, remove all periods (we want MD not M.D.)
-        2. For units like 'min.' remove periods (we want 'min' not 'min.')
-        3. For other words, preserve the period as it may be intentional punctuation
-        4. Remove trailing whitespace
+        1. For known abbreviations and units in our list, remove all periods and preserve case (we want PhD not Ph.D.)
+        2. Remove leading and trailing whitespace
         """
+        # Remove leading and trailing whitespace
         cleaned = abbr.strip()
 
         # First remove periods for comparison with our abbreviations list
         abbr_without_periods = re.sub(r'\.', '', cleaned)
 
-        # Check if it's in our known abbreviations list or standalone units list
+        # Check if it's in our known abbreviations list or standalone units list (case-insensitive)
         if (abbr_without_periods.upper() in [a.upper() for a in cls.ABBREVIATIONS] or
             abbr_without_periods.upper() in [u.upper() for u in cls.STANDALONE_UNITS]):
-            return abbr_without_periods
+            return abbr_without_periods  # Return version without periods
         else:
             # For regular words, just preserve them as is (periods will be handled elsewhere)
             return cleaned
@@ -302,8 +301,8 @@ class FileRenamer:
         # Patterns for letter-based abbreviations with periods
         # We'll use multiple patterns to handle different cases
 
-        # Pattern 1: Multi-letter abbreviations with periods (M.D., Ph.D.)
-        pattern1 = r'(?:^|(?<=\W))([A-Za-z](?:\.[A-Za-z])+\.?)(?=\W|$)'
+        # Pattern 1: Multi-letter abbreviations with periods (M.D., Ph.D., B.Sc., M.Phil.)
+        pattern1 = r'(?:^|(?<=\W))([A-Za-z]+(?:\.[A-Za-z]+)+\.?)(?=\W|$)'
 
         # Pattern 2: Abbreviations with periods and internal spaces (e.g. 'Lt. Col.', 'Prof. Dr.')
         # Process this BEFORE pattern 3 to catch multi-part abbreviations
@@ -327,7 +326,7 @@ class FileRenamer:
                 # Process each match
                 for match in pattern_matches:
                     match_text = match.group(1)
-                    self.debug_print(f"  Match: {match_text!r} at position {match.start()}-{match.end()}", level='verbose')
+                    # self.debug_print(f"  Match: {match_text!r} at position {match.start()}-{match.end()}", level='verbose')
 
                     # Skip if match is None (shouldn't happen, but just to be safe)
                     if match is None:
@@ -385,6 +384,7 @@ class FileRenamer:
 
         # Create normalized versions of terms (removing spaces and punctuation) for matching
         for i, term in enumerate(self.PRESERVED_TERMS):
+            # Create a marker without trailing space
             marker = f"__PRESERVED_TERM_{i}__"
             self._preserved_term_markers[term] = marker
             self._preserved_term_originals[marker] = term  # Store original capitalization
@@ -392,9 +392,6 @@ class FileRenamer:
             # Create normalized version (lowercase, no spaces or punctuation)
             normalized = re.sub(r'[\s\-.,;:"&!?()]', '', term.lower())
             self._normalized_terms[normalized] = (term, marker)
-
-            # Debug output is now in the detail level
-            pass
 
             # Debug: Show normalized versions
             self.debug_print(f"[PRESERVED] Term: {term!r} → Normalized: {normalized!r}", level='detail')
@@ -414,47 +411,57 @@ class FileRenamer:
 
         # First try exact matches (case-insensitive)
         for term in self.PRESERVED_TERMS:
-            # Replace the term with its marker (case-insensitive)
+            # Replace the term with its marker
             new_text = re.sub(rf'\b{re.escape(term)}\b', self._preserved_term_markers[term], text, flags=re.IGNORECASE)
             if new_text != text:
                 self.debug_print(f"[PRESERVED] Exact match: {term!r} in text", level='verbose')
                 text = new_text
 
-        # Then try normalized matches (without punctuation)
-        # This allows "Coca Cola Inc" to match "Coca-Cola, Inc."
+        # Then try flexible matching for each preserved term
+        # This handles variations in spacing, punctuation, and capitalization
+        for term in self.PRESERVED_TERMS:
+            # Skip single-word terms as they're already handled by exact matching
+            if ' ' not in term and '-' not in term and '.' not in term and '&' not in term:
+                continue
 
-        # Special handling for multi-word company names with specific formatting
-        # This allows "Coca-COLA, INC." to match "Coca-Cola, Inc."
+            # Get the normalized form of the term (lowercase, no spaces or punctuation)
+            normalized_term = re.sub(r'[\s\-.,;:"&!?()]', '', term.lower())
 
-        # Implement a direct solution for Coca-Cola, Inc.
-        # This will handle variations like "Coca-COLA, INC." or "Coca Cola Inc"
+            # Create a pattern that allows flexible spacing and punctuation between words
+            # Split the term into words
+            words = re.findall(r'[a-zA-Z0-9]+', term)
 
-        # First, try to find any Coca-Cola pattern in the text
-        coca_pattern = r'Coca[\-\s]*Cola[\s\-,.;:"&!?()]*(?:Inc|INC|inc)'
-        coca_matches = re.findall(coca_pattern, text, re.IGNORECASE)
+            if len(words) > 1:
+                # For multi-word terms, create a pattern that allows flexible spacing/punctuation
+                # This matches each word with optional punctuation/spacing between them
+                pattern = r''
+                for i, word in enumerate(words):
+                    if i > 0:
+                        # Allow any combination of spaces and punctuation between words
+                        pattern += r'[\s\-.,;:"&!?()]*'
+                    pattern += re.escape(word)
 
-        # Process any matches we found
-        for match in coca_matches:
-            # Get the normalized form of the match
-            normalized_match = re.sub(r'[\s\-.,;:"&!?()]', '', match.lower())
+                # Allow optional trailing punctuation
+                pattern += r'[\s\-.,;:"&!?()]*'
 
-            # Check if it matches our normalized terms
-            if normalized_match in self._normalized_terms:
-                original_term, marker = self._normalized_terms[normalized_match]
-                text = text.replace(match, marker)
-                self.debug_print(f"[PRESERVED] Special match: {match!r} → {original_term!r}", level='verbose')
-            else:
-                # Check if it's close to any of our normalized terms
-                for norm_key, (original_term, marker) in self._normalized_terms.items():
-                    # For company names, allow more flexible matching
-                    if 'coca' in norm_key and 'cola' in norm_key:
-                        if norm_key in normalized_match or normalized_match in norm_key:
-                            text = text.replace(match, marker)
-                            self.debug_print(f"[PRESERVED] Flexible match: {match!r} → {original_term!r}", level='verbose')
-                            break
+                # Find all matches of this pattern
+                matches = re.findall(pattern, text, flags=re.IGNORECASE)
 
-        # Get all word groups to check with the original regex
-        words = re.findall(r'\b[\w\s\-.,;:"&!?()]+\b', text)
+                for match in matches:
+                    # Normalize the match for comparison
+                    normalized_match = re.sub(r'[\s\-.,;:"&!?()]', '', match.lower())
+
+                    # Check if the normalized match is exactly the normalized term
+                    if normalized_match == normalized_term:
+                        # Replace with the preserved term marker
+                        text = text.replace(match, self._preserved_term_markers[term])
+                        self.debug_print(f"[PRESERVED] Flexible match: {match!r} → {term!r}", level='verbose')
+
+        # General approach for all terms - check for normalized matches in word groups
+        # Use a pattern that captures word groups more effectively
+        # This pattern handles words at the beginning/end of text and with special characters
+        # It looks for groups of characters separated by spaces or string boundaries
+        words = re.findall(r'(?:^|\s)([\w\-.,;:"&!?()]+)(?:\s|$)', text)
         self.debug_print(f"[PRESERVED] Found {len(words)} word groups to check", level='detail')
 
         for word_group in words:
@@ -462,38 +469,19 @@ class FileRenamer:
             normalized_group = re.sub(r'[\s\-.,;:"&!?()]', '', word_group.lower())
             self.debug_print(f"[PRESERVED] Checking: {word_group!r} → Normalized: {normalized_group!r}", level='detail')
 
-            # Special debug for Coca-Cola
-            if 'coca' in normalized_group.lower() or 'cola' in normalized_group.lower():
-                self.debug_print(f"[PRESERVED] Found potential Coca-Cola reference: {word_group!r}", level='detail')
-                # Check if it should match any of our normalized terms
-                for norm_key, (orig_term, _) in self._normalized_terms.items():
-                    if 'coca' in norm_key and 'cola' in norm_key:
-                        self.debug_print(f"[PRESERVED] Comparing: {normalized_group!r} with {norm_key!r} from {orig_term!r}", level='detail')
-                        # Show how similar they are
-                        if normalized_group == norm_key:
-                            self.debug_print(f"[PRESERVED] EXACT MATCH of normalized forms!", level='detail')
-                        elif normalized_group in norm_key:
-                            self.debug_print(f"[PRESERVED] Normalized group is CONTAINED IN normalized term", level='detail')
-                        elif norm_key in normalized_group:
-                            self.debug_print(f"[PRESERVED] Normalized term is CONTAINED IN normalized group", level='detail')
-
-            # Check if this normalized group matches any of our terms
-            if normalized_group in self._normalized_terms:
+            # Check if this normalized group exactly matches any of our terms
+            if normalized_group in self._normalized_terms and len(normalized_group) > 2:  # Minimum length check
                 original_term, marker = self._normalized_terms[normalized_group]
                 # Replace this specific instance with the marker
                 text = text.replace(word_group, marker, 1)
                 self.debug_print(f"[PRESERVED] Normalized match: {word_group!r} → {original_term!r}", level='verbose')
-            else:
-                # Try to find partial matches for debugging
-                for norm_key in self._normalized_terms:
-                    if norm_key in normalized_group or normalized_group in norm_key:
-                        self.debug_print(f"[PRESERVED] Near miss: {normalized_group!r} vs {norm_key!r} (from {self._normalized_terms[norm_key][0]!r})", level='detail')
 
         return text
 
-    def _restore_special_terms(self, parts):
+    def _restore_preserved_terms(self, parts):
         """
         Restore preserved terms from their temporary markers after text splitting.
+        Handles cases where markers may be adjacent or embedded in other text.
 
         Args:
             parts: List of parts to process
@@ -501,21 +489,44 @@ class FileRenamer:
         Returns:
             List of parts with markers replaced by original preserved terms
         """
-        if not hasattr(self, '_preserved_term_originals'):
+        try:
+            self.debug_print(f"\n[RESTORATION] Starting restoration of preserved terms from parts: {parts!r}", level='normal')
+
+            if not hasattr(self, '_preserved_term_originals'):  # Dictionary of preserved terms with their original capitalization
+                self.debug_print("[RESTORATION] No preserved terms found", level='normal')
+                return parts
+
+            # Get all markers from the dictionary
+            markers = list(self._preserved_term_originals.keys())
+
+            # Process each part individually to maintain part structure
+            restored_parts = []
+            for i, part in enumerate(parts):
+                try:
+                    # Process this part
+                    processed_part = part
+                    self.debug_print(f"[RESTORATION] Processing part {i}: {part!r}", level='detail')
+
+                    # Check if this part contains any markers
+                    for marker in markers:
+                        if marker in processed_part:
+                            original = self._preserved_term_originals[marker]
+                            # Replace the marker with the original term
+                            processed_part = processed_part.replace(marker, original)
+
+                    # Add the processed part to the result
+                    restored_parts.append(processed_part)
+                except Exception as e:
+                    self.debug_print(f"[RESTORATION] Error processing part {i}: {part!r} - {str(e)}", level='error')
+                    # Add the original part to maintain structure
+                    restored_parts.append(part)
+
+            return restored_parts
+        except Exception as e:
+            self.debug_print(f"[RESTORATION] Critical error in restoration: {str(e)}", level='error')
+            # Return original parts if there's an error
             return parts
 
-        restored_parts = []
-        for part in parts:
-            restored = part
-            # Check if this part contains any of our markers
-            for marker, original in self._preserved_term_originals.items():
-                if marker in part:
-                    # Replace with the original capitalization from our list
-                    restored = part.replace(marker, original)
-                    self.debug_print(f"[PRESERVED] Restored {marker!r} to {original!r}", level='detail')
-                    break
-            restored_parts.append(restored)
-        return restored_parts
 
     def _clean_date_patterns_with_periods(self, text):
         """
@@ -591,10 +602,10 @@ class FileRenamer:
 
         return text
 
-    # Common abbreviations to preserve in uppercase
+    # Common abbreviations to preserve case
     ABBREVIATIONS = {
         # Academic Degrees (use periods just for testing the clean_abbreviation function)
-        'B.A', 'B.S', 'M.A', 'M.B.A', 'M.D', 'M.S', 'Ph.D', 'J.D',
+        'B.A', 'B.S', 'M.A', 'M.B.A', 'M.D', 'M.S', 'Ph.D', 'J.D', 'BSc', 'MSc', 'MPhil',
 
         # Professional Titles (multi-letter, no periods)
         'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Rev',
@@ -1053,10 +1064,28 @@ class FileRenamer:
         """
         Validate and clean the ABBREVIATIONS set according to our rules.
         Modifies ABBREVIATIONS in place.
+
+        This method directly cleans each abbreviation by:
+        1. Removing leading and trailing whitespace
+        2. Removing all periods
+        3. Preserving the original case
         """
         cleaned = set()
         for abbr in cls.ABBREVIATIONS:
-            cleaned.add(cls._clean_abbreviation(abbr))
+            # Remove leading and trailing whitespace
+            abbr_stripped = abbr.strip()
+
+            # Remove all periods
+            cleaned_abbr = re.sub(r'\.', '', abbr_stripped)
+
+            # Debug output
+            if abbr != cleaned_abbr:
+                cls.debug_print(f"    Cleaned abbreviation: {abbr!r} -> {cleaned_abbr!r}", level='verbose')
+
+            # Add to cleaned set
+            cleaned.add(cleaned_abbr)
+
+        # Replace the original set with the cleaned set
         cls.ABBREVIATIONS = cleaned
 
     def __init__(self, directory: str = '.', dry_run: bool = False):
@@ -1371,13 +1400,28 @@ class FileRenamer:
             # Only process the name part, not the extension
             name = self._clean_common_abbreviation_patterns(name)
             name = self._clean_date_patterns_with_periods(name)
+            
+            # Pre-processing: Add spaces between adjacent preserved term markers
+            # This ensures they'll be properly split into separate parts
+            adjacent_markers_found = False
+            while re.search(r'(__PRESERVED_TERM_\d+__)(__PRESERVED_TERM_\d+__)', name):
+                if not adjacent_markers_found:
+                    self.debug_print(f"[SPLIT] Found adjacent markers in: {name}", level='normal')
+                    adjacent_markers_found = True
+                name = re.sub(r'(__PRESERVED_TERM_\d+__)(__PRESERVED_TERM_\d+__)', r'\1 \2', name)
+            
+            self.debug_print(f"[SPLIT] After adding spaces between adjacent markers: {name}", level='normal')
 
             # Build pattern that matches our word boundaries
-            split_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
+            word_boundary_pattern = '([' + ''.join(re.escape(c) for c in self.WORD_BOUNDARY_CHARS) + '])'
+
+            # Use the word boundary pattern for splitting
+            split_pattern = word_boundary_pattern
             # self.debug_print(f"Split pattern: {split_pattern}")
 
             # First do a quick validation of how many parts we might get
             test_parts = re.split(split_pattern, name)
+            self.debug_print(f"[SPLIT] Initial parts after splitting: {test_parts[:10]}... (total: {len(test_parts)})", level='normal')
             if len(test_parts) > 200:  # Very generous limit, normal files have 30-90 parts
                 self.debug_print(f"Filename too complex: {len(test_parts)} parts exceeds limit of 200")
                 return name  # Return original name if too complex
@@ -1385,38 +1429,38 @@ class FileRenamer:
             # Filter out empty parts
             parts = [p for p in test_parts if p != '']
 
-            # Restore hyphenated abbreviations that were replaced with markers
-            parts = self._restore_special_terms(parts)
-
             titled_parts = []
             prev_part = ''
             prev_was_abbrev = False
             prior_abbreviation = None
             prior_date_part = None  # Track date parts like prior_abbreviation
-            processed_parts = {}  # Track how each part was processed
 
             last_real_word = None
             for part in parts:
                 if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
                     last_real_word = part.lower()
 
-            # Track which parts we've processed and why
-            processed_parts = {}
-
             # Now process each part
             for i, part in enumerate(parts):
-                if i in processed_parts:
-                    self.debug_print(f"\n[SKIP] Part {i}: {part!r} ({processed_parts[i]})")
-                    continue
-                # if not part:  # Skip empty parts (handled above)
-                #     continue
-
                 self.debug_print(f"\nProcessing part {i}: {part!r} (len={len(part)}, has_boundary={[c for c in part if c in self.WORD_BOUNDARY_CHARS]})")
+
+                # Check if this part contains a preserved term marker
+                if any(marker_prefix in part.upper() for marker_prefix in ["__PRESERVED_TERM_"]):
+                    # Find which original term this marker corresponds to
+                    original_term = "unknown"
+                    for marker, term in self._preserved_term_originals.items():
+                        if marker.strip() in part:
+                            original_term = term
+                            break
+
+                    titled_parts.append(part)
+                    self.debug_print(f"  Preserving marker as-is: {part!r} (original: {original_term!r})")
+                    prev_part = part
+                    continue
 
                 # Check if this part is in the PRESERVED_TERMS list - if so, add it as-is and skip processing
                 if part in self.PRESERVED_TERMS:
                     titled_parts.append(part)
-                    processed_parts[i] = f"preserved term: {part!r}"
                     self.debug_print(f"  Preserving term as-is: {part!r}")
                     prev_part = part
                     continue
@@ -1849,45 +1893,69 @@ class FileRenamer:
                 prev_part = processed_word  # Store the processed version, not the original
                 prior_abbreviation = None  # Reset for non-abbreviation word
 
+            # Restore Preserved Terms that were replaced with markers
+            titled_parts = self._restore_preserved_terms(titled_parts)
+            self.debug_print(f"[RESTORE] titled_parts after restoring preserved terms: {titled_parts!r}", level='normal')
+
             # Handle periods in preserved terms by replacing with a placeholder
             PRESERVED_PERIOD_PLACEHOLDER = '__PRESERVED_TERM_PERIOD__'
             preserved_terms_with_periods = [term for term in self.PRESERVED_TERMS if '.' in term]
+
             for term in preserved_terms_with_periods:
                 # Create a version of the term with the placeholder instead of periods
                 term_with_placeholder = term.replace('.', PRESERVED_PERIOD_PLACEHOLDER)
+
                 # Replace the term in the parts list
                 for i, part in enumerate(titled_parts):
+                    # self.debug_print(f"[PRESERVED_PERIODS] Checking part vs term: {part!r} == {term!r} -> {part == term}", level='normal')
                     if part == term:
                         titled_parts[i] = term_with_placeholder
 
-            # Join parts
-            name = ''.join(titled_parts)
+            # Process periods in each part individually (excluding Preserved Terms)
+            processed_parts = []
+            for part in titled_parts:
+                # Skip empty parts
+                if not part:
+                    continue
 
-            # Now normalize periods
-            def handle_periods(match):
-                full_str = name  # Capture the full string for context
-                pos = match.start()
-                before_char = full_str[pos-1] if pos > 0 else ''
-                after_char = match.group(1)  # The letter after the period
+                # Define period handling function for this part
+                def handle_periods(match):
+                    full_str = part  # Capture the full part for context
+                    pos = match.start()
+                    before_char = full_str[pos-1] if pos > 0 else ''
+                    after_char = match.group(1)  # The letter after the period
 
-                # Look ahead for potential abbreviation pattern (e.g., M.D)
-                next_period_pos = full_str.find('.', pos + 1)
-                if next_period_pos != -1 and next_period_pos - pos <= 2:
-                    potential_abbrev = (before_char + '.' + after_char).upper()
-                    if potential_abbrev in self.ABBREVIATIONS:
-                        return f'.{after_char.upper()}'
+                    # Look ahead for potential abbreviation pattern (e.g., M.D)
+                    next_period_pos = full_str.find('.', pos + 1)
+                    if next_period_pos != -1 and next_period_pos - pos <= 2:
+                        potential_abbrev = (before_char + '.' + after_char).upper()
+                        if potential_abbrev in self.ABBREVIATIONS:
+                            return f'.{after_char.upper()}'
 
-                # Check other cases
-                if before_char.isdigit() or after_char.upper() in self.ABBREVIATIONS:
-                    return f'.{after_char}'
+                    # Check other cases
+                    if before_char.isdigit() or after_char.upper() in self.ABBREVIATIONS:
+                        return f'.{after_char}'
 
-                # Not an abbreviation, add space
-                return f'. {after_char}'
+                    # Not an abbreviation, add space
+                    result = f'. {after_char}'
+                    self.debug_print(f"[PERIODS] Adding space after period: '.{after_char}' -> '{result}' (before_char={before_char!r})", level='normal')
+                    return result
 
-            name = re.sub(r'\.([a-zA-Z])', handle_periods, name)
+                # Process periods in this part
+                processed_part = re.sub(r'\.([a-zA-Z])', handle_periods, part)
 
-            # Restore periods from PRESERVED_PERIOD_PLACEHOLDER
-            name = name.replace(PRESERVED_PERIOD_PLACEHOLDER, '.')
+                # Restore periods from PRESERVED_PERIOD_PLACEHOLDER in this part
+                placeholder_count = processed_part.count(PRESERVED_PERIOD_PLACEHOLDER)
+                if placeholder_count > 0:
+                    # self.debug_print(f"[PERIODS] Found {placeholder_count} period placeholders to restore in part: {processed_part!r}", level='normal')
+                    processed_part = processed_part.replace(PRESERVED_PERIOD_PLACEHOLDER, '.')
+                    self.debug_print(f"[PERIODS] After restoring period placeholders in part: {processed_part!r}", level='normal')
+
+                processed_parts.append(processed_part)
+
+            # Join the processed parts
+            name = ''.join(processed_parts)
+            self.debug_print(f"[PERIODS] After joining processed parts: {name!r}", level='normal')
 
             # Clean up any double spaces
             name = re.sub(r'\s+', ' ', name)
