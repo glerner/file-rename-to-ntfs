@@ -23,13 +23,13 @@ Author: George Lerner with Cascade AI
 Date: 2025-01-27
 Version: 0.9.0 (Beta)
 """
-# fmt: off
 __version__ = "0.9.0"  # Beta - Close to first stable release
 
 import os
 import re
 import sys
 import errno
+import traceback
 from typing import Dict, List, Tuple
 from pathlib import Path
 import unicodedata
@@ -350,7 +350,6 @@ class FileRenamer:
                         # Use re.escape to handle special regex characters in the match text
                         escaped_pattern = re.escape(match_text)
                         result, num_subs = re.subn(escaped_pattern, cleaned_abbr, result, count=1, flags=re.IGNORECASE)
-                        self.debug_print(f"[ABBREV] After sub: text={result!r}, num_subs={num_subs}", level='verbose')
                     except Exception as e:
                         self.debug_print(f"[ABBREV] Error in regex substitution: {e}", level='verbose')
                         self.debug_print(f"[ABBREV] match: {match!r}", level='verbose')
@@ -1036,6 +1035,9 @@ class FileRenamer:
         Validate the CHAR_REPLACEMENTS dictionary.
         Raises ValueError if any replacement is invalid.
         """
+
+        print("\n===== program name is " + __name__ + " =====\n")
+
         for original_char, replacement_char in cls.CHAR_REPLACEMENTS.items():
             if not isinstance(original_char, str) or not isinstance(replacement_char, str):
                 raise ValueError(
@@ -1745,8 +1747,8 @@ class FileRenamer:
                             found_unit = True
                             # Don't modify loop counter directly, we'll use processed_parts to skip
                             # already processed parts in the next iterations
-                            self.debug_print(f"  Found unit at index {i}, marked parts {i} to {j} as processed")
-                            self.debug_print(f"  Next parts to process: {parts[j+1:]!r}" if j+1 < len(parts) else "  No more parts to process")
+                            self.debug_print(f"  Found unit at index {i}, marked parts {i} to {unit_end_index} as processed")
+                            self.debug_print(f"  Next parts to process: {parts[unit_end_index+1:]!r}" if unit_end_index+1 < len(parts) else "  No more parts to process")
                             self.debug_print(f"  Current filename being processed: {name!r}")
                             self.debug_print(f"  DEBUG: titled_parts after unit found: {titled_parts!r}")
                             # Important: Continue with the main loop after processing this unit
@@ -1770,12 +1772,12 @@ class FileRenamer:
 
                 # Skip this part if it's already been processed as part of a unit
                 # This replaces the previous 'if found_unit: continue' approach
-                try:
+                # try:
                     if processed_parts[i] and processed_parts[i].startswith('part of'):
                         self.debug_print(f"  Skipping already processed part: {parts[i]!r} at index {i}")
                         continue
-                except Exception as e:
-                    self.debug_print(f"  ERROR checking processed_parts[{i}]: {e}")
+                # except Exception as e:
+                    # self.debug_print(f"  ERROR checking processed_parts[{i}]: {e}")
 
                 try:
                     if found_unit:
@@ -2141,12 +2143,44 @@ def main():
 # Validate replacements when module is loaded
 FileRenamer.validate_replacements()
 
+# Define a custom exception handler that will only be installed when this file is run directly (not when run with pytest)
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    # Get the most recent frame from the traceback for location information
+    tb_frame = traceback.extract_tb(exc_traceback)[-1] if exc_traceback else None
+
+    # Extract file, line, and function information if available
+    file_info = f" in {tb_frame.filename}:{tb_frame.lineno} (function: {tb_frame.name})" if tb_frame else ""
+
+    # Create error message with location information
+    error_msg = f"Unhandled exception: {exc_type.__name__}: {exc_value}{file_info}\n"
+
+    # Always write to both stdout and stderr to maximize visibility
+    sys.stdout.write(f"\n==== GLOBAL EXCEPTION HANDLER ====\n")
+    sys.stdout.write(error_msg)
+    sys.stdout.write("\nDetailed traceback:\n")
+    sys.stdout.write(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    sys.stdout.write("\nPlease report this error with the above information.\n")
+    sys.stdout.write("==== END EXCEPTION HANDLER ====\n")
+    sys.stdout.flush()
+
+    # Also write to stderr which pytest will capture even with --capture=no
+    sys.stderr.write(f"\n==== GLOBAL EXCEPTION HANDLER ====\n")
+    sys.stderr.write(error_msg)
+    sys.stderr.write("\nDetailed traceback:\n")
+    sys.stderr.write(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    sys.stderr.write("\nPlease report this error with the above information.\n")
+    sys.stderr.write("==== END EXCEPTION HANDLER ====\n")
+    sys.stderr.flush()
+
 if __name__ == '__main__':
+    # Only install the exception handler when running this file directly
+    # This prevents it from interfering with pytest's exception handling
+    sys.excepthook = global_exception_handler
+
     logging.basicConfig(level=logging.DEBUG)
     try:
         main()
     except Exception as e:
-        import traceback
         print(f"\nUnhandled exception: {type(e).__name__}: {e}")
         print("\nDetailed traceback:")
         print(traceback.format_exc())

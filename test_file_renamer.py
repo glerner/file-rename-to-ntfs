@@ -9,6 +9,10 @@ Date: 2025-01-27
 import os
 import errno
 import unittest
+import sys
+import traceback
+import pytest
+import logging
 from pathlib import Path
 import tempfile
 import shutil
@@ -31,63 +35,58 @@ class TestFileRenamer(unittest.TestCase):
             force_fail: If True, adds 'FAIL ' prefix to force failures
         """
         failures = []
-
+        
+        # Try to import colorama for colored output
+        try:
+            from colorama import Fore, Style
+            has_color = True
+        except ImportError:
+            has_color = False
+            
+        def highlight_special_chars(text):
+            if not has_color:
+                return repr(text)
+            # Get the special chars from FileRenamer
+            special_chars = set(FileRenamer.CHAR_REPLACEMENTS.values())
+            result = []
+            text_repr = repr(text)[1:-1]  # Remove the quotes
+            i = 0
+            while i < len(text_repr):
+                if text_repr[i:i+2] == '\\u':
+                    # Skip escaped unicode
+                    result.append(text_repr[i:i+6])
+                    i += 6
+                    continue
+                char = text_repr[i]
+                if char in special_chars:
+                    result.append(f"{Fore.CYAN}{char}{Style.RESET_ALL}")
+                else:
+                    result.append(char)
+                i += 1
+            return f"'{(''.join(result))}'"  # Add back the quotes
+            
         for original, expected in test_cases:
             if force_fail:
                 # Temporarily add FAIL prefix to force failures
                 expected = 'FAIL ' + expected
-            try:
-                # Try to import colorama for colored output
-                try:
-                    from colorama import Fore, Style
-                    has_color = True
-                except ImportError:
-                    has_color = False
 
-                def highlight_special_chars(text):
-                    if not has_color:
-                        return repr(text)
-                    # Get the special chars from FileRenamer
-                    special_chars = set(FileRenamer.CHAR_REPLACEMENTS.values())
-                    result = []
-                    text_repr = repr(text)[1:-1]  # Remove the quotes
-                    i = 0
-                    while i < len(text_repr):
-                        if text_repr[i:i+2] == '\\u':
-                            # Skip escaped unicode
-                            result.append(text_repr[i:i+6])
-                            i += 6
-                            continue
-                        char = text_repr[i]
-                        if char in special_chars:
-                            result.append(f"{Fore.CYAN}{char}{Style.RESET_ALL}")
-                        else:
-                            result.append(char)
-                        i += 1
-                    return f"'{(''.join(result))}'"  # Add back the quotes
+            result = self.renamer._clean_filename(original)
 
-                result = self.renamer._clean_filename(original)
+            print(f"Finished processing: {original!r}")
+            # For coloring, ignore 'FAIL ' prefix if present
+            result_no_fail = result[5:] if result.startswith('FAIL ') else result
+            expected_no_fail = expected[5:] if expected.startswith('FAIL ') else expected
+            print(f"Result:   {highlight_special_chars(result)}")
+            if result_no_fail != expected_no_fail:
+                print(f"{Fore.CYAN}Expected:{Style.RESET_ALL} {highlight_special_chars(expected_no_fail)}")
+            else:
+                print(f"Expected: {highlight_special_chars(expected_no_fail)}")
+            print(f"{'='*50}")
 
-                print(f"Finished processing: {original!r}")
-                # For coloring, ignore 'FAIL ' prefix if present
-                result_no_fail = result[5:] if result.startswith('FAIL ') else result
-                expected_no_fail = expected[5:] if expected.startswith('FAIL ') else expected
-                print(f"Result:   {highlight_special_chars(result)}")
-                if result_no_fail != expected_no_fail:
-                    print(f"{Fore.CYAN}Expected:{Style.RESET_ALL} {highlight_special_chars(expected_no_fail)}")
-                else:
-                    print(f"Expected: {highlight_special_chars(expected_no_fail)}")
-                print(f"{'='*50}")
-
-                if result != expected:
-                    failures.append({
-                        'input': original,
-                        'error': f"{expected!r}"
-                    })
-            except Exception as e:
+            if result != expected:
                 failures.append({
                     'input': original,
-                    'error': str(e)
+                    'error': f"{expected!r}"
                 })
 
         if failures:
@@ -96,11 +95,7 @@ class TestFileRenamer(unittest.TestCase):
             for i, failure in enumerate(failures, 1):
                 print(f"Failure #{i}:")
                 print(f"  Input:    {failure['input']!r}")
-                if 'error' in failure:
-                    print(f"  Error:    {failure['error']}")
-                else:
-                    print(f"  Expected: {highlight_special_chars(failure['expected'])}")
-                    print(f"  Got:      {highlight_special_chars(failure['got'])}")
+                print(f"  Error:    {failure['error']}")
                 print()
 
             # Fail the test with a summary
@@ -934,5 +929,58 @@ class TestFileRenamer(unittest.TestCase):
 
         self._run_test_cases(test_cases)
 
+
+
+# Define a custom exception handler that will only be installed when this file is run directly (not when run with pytest)
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    # Get the most recent frame from the traceback for location information
+    tb_frame = traceback.extract_tb(exc_traceback)[-1] if exc_traceback else None
+
+    # Extract file, line, and function information if available
+    file_info = f" in {tb_frame.filename}:{tb_frame.lineno} (function: {tb_frame.name})" if tb_frame else ""
+
+    # Create error message with location information
+    error_msg = f"Unhandled exception: {exc_type.__name__}: {exc_value}{file_info}"
+
+    # Write to stderr to bypass output capture
+    sys.stderr.write(f"\n==== GLOBAL EXCEPTION HANDLER ====\n")
+    sys.stderr.write(f"{error_msg}\n")
+    sys.stderr.write("\nDetailed traceback:\n")
+    sys.stderr.write(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    sys.stderr.write("\nPlease report this error with the above information.\n")
+    sys.stderr.write("==== END EXCEPTION HANDLER ====\n")
+    sys.stderr.flush()
+
+    # Also write to stdout which might be visible in some contexts
+    print(f"\n==== GLOBAL EXCEPTION HANDLER ====\n")
+    print(f"{error_msg}\n")
+    print("\nDetailed traceback:")
+    print(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    print("\nPlease report this error with the above information.")
+    print("==== END EXCEPTION HANDLER ====\n")
+
+# Add a test function that processes files without catching exceptions
+def test_process_files_without_exception_handling():
+    """Process files without catching exceptions to test global exception handler."""
+    print("\nRunning file processing test without exception handling...")
+    renamer = FileRenamer(dry_run=True)
+
+    # Process files that might cause exceptions
+    files_to_test = [
+        '5 g flour 100km 2l water.gpx',
+        '5gB ram 2tB storage.txt'
+    ]
+
+    for filename in files_to_test:
+        print(f"\nProcessing: '{filename}'")
+        # This will let any exceptions propagate to the global handler
+        result = renamer._clean_filename(filename)
+        print(f"Result: '{result}'")
+
 if __name__ == '__main__':
+    # Only install the exception handler when running this file directly
+    # This prevents it from interfering with pytest's exception handling
+    sys.excepthook = global_exception_handler
+
+    logging.basicConfig(level=logging.DEBUG)
     unittest.main()
