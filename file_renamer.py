@@ -163,13 +163,16 @@ class FileRenamer:
     R = CHAR_REPLACEMENTS
 
     # List of terms with specific capitalization and punctuation to preserve exactly
+    # Future Improvement: when have a configuration file for users to define their own preserved terms, make a "direct replace" section e.g. for file names replace "Star Trek: The Next Generation" (with colon and double quotes) with Star Trek Next Generation (no colon or double quotes and removed 'The')
     PRESERVED_TERMS = [
         # TV/Movie ratings (okay if some do not need special handling)
         'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
-        # Medical or chemical terms
+        # Medical or chemical terms (testing contain word separators like space and hyphen, and keep their original capitalization)
         'X-Ray', 'mRNA', 'LiveDesign Biologics', 'hERG', 'EGFRC797S', 'PRMT5-MTA', 'NLRP3',
-        # Company names with specific capitalization/punctuation
-        'AT&T', 'Barnes&Noble', 'Coca-Cola, Inc.', 'Toys"R"Us', 'J.Hud'
+        # Company names with specific capitalization/punctuation (testing periods and ampersand which have special processing)
+        'AT&T', 'Barnes&Noble', 'Coca-Cola, Inc.', 'Toys"R"Us', 'J.Hud', 'DiaryOfACEO',
+        # Movie Title with colon (a character forbidden in NTFS filenames) and double quotes (a character not forbidden in NTFS filenames but we're replacing with Full Width Quotation Mark)
+        '"Star Trek: The Next Generation"'
     ]
 
     # All opening bracket characters (ASCII and replacements)
@@ -367,14 +370,54 @@ class FileRenamer:
         self.debug_print(f"[ABBREV] Preprocessing complete, result: {result!r}", level='verbose')
         return result
 
+    def _replace_special_chars(self, text):
+        """
+        Replace special characters with NTFS-compatible alternatives.
+
+        Args:
+            text: Text to process
+
+        Returns:
+            Text with special characters replaced
+        """
+        # Function to colorize replacement chars for debug output
+        def colorize(char):
+            return f"{Fore.CYAN}{char}{Style.RESET_ALL}"
+
+        # Handle fractions first (digit/digit with optional spaces)
+        text = re.sub(r'(\d)\s*/\s*(\d)', fr'\1{self.R["/"]}\2', text)
+
+        # Handle multi-char sequences (like ellipsis, brackets)
+        for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
+            if len(original_char) > 1:  # Multi-char replacement
+                if original_char in text:
+                    self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
+                    if original_char == '...':
+                        # Handle ellipsis specially to match 3 or more dots
+                        text = re.sub(r'\.{3,}', replacement_char, text)
+                    else:
+                        text = text.replace(original_char, replacement_char)
+
+        # Handle single-char replacements
+        for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
+            if len(original_char) == 1:  # Single-char replacements
+                if original_char in text:
+                    self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
+                    text = re.sub(f'{re.escape(original_char)}+', replacement_char, text)
+
+        return text
+
     def _preserve_special_terms(self, text):
         """
         Preserve terms with specific capitalization and punctuation by replacing them with
         temporary markers before text splitting. This ensures terms like TV-MA, AT&T, etc.
         are treated as single tokens rather than being split at punctuation characters.
 
+        The preserved terms are first processed with the same character replacements
+        as the filename, so users can specify terms with original characters.
+
         Args:
-            text: Text to process
+            text: Text to process (already processed with character replacements)
 
         Returns:
             Text with preserved terms replaced by markers
@@ -383,20 +426,37 @@ class FileRenamer:
         self._preserved_term_markers = {}
         self._preserved_term_originals = {}
         self._normalized_terms = {}
+        self._cleaned_terms = {}  # New dictionary for cleaned terms
 
-        # Create normalized versions of terms (removing spaces and punctuation) for matching
+        # Create a regex pattern for characters to remove during normalization
+        # Based on WORD_BOUNDARY_CHARS
+        chars_to_escape = [re.escape(char) for char in self.WORD_BOUNDARY_CHARS]
+        self._normalization_pattern = re.compile(f"[{''.join(chars_to_escape)}]")
+
+        # Process each preserved term with character replacements
         for i, term in enumerate(self.PRESERVED_TERMS):
+            # Validate the term
+            if not self._validate_preserved_term(term):
+                self.debug_print(f"[PRESERVED] Warning: Invalid term skipped: {term!r}", level='normal')
+                continue
+
+            # Clean the term using the same replacement rules as filenames
+            cleaned_term = self._replace_special_chars(term)
+
             # Create a marker without trailing space
             marker = f"__PRESERVED_TERM_{i}__"
-            self._preserved_term_markers[term] = marker
-            self._preserved_term_originals[marker] = term  # Store original capitalization
+            self._preserved_term_markers[cleaned_term] = marker
+            self._preserved_term_originals[marker] = cleaned_term  # Store cleaned version
 
             # Create normalized version (lowercase, no spaces or punctuation)
-            normalized = re.sub(r'[\s\-.,;:"&!?()]', '', term.lower())
-            self._normalized_terms[normalized] = (term, marker)
+            normalized = re.sub(r'[\s\-.,;:"&!?()]', '', cleaned_term.lower())
+            self._normalized_terms[normalized] = (cleaned_term, marker)
+
+            # Store mapping between original and cleaned terms
+            self._cleaned_terms[term] = cleaned_term
 
             # Debug: Show normalized versions
-            self.debug_print(f"[PRESERVED] Term: {term!r} → Normalized: {normalized!r}", level='detail')
+            self.debug_print(f"[PRESERVED] Original: {term!r} → Cleaned: {cleaned_term!r} → Normalized: {normalized!r}", level='detail')
 
         # Debug: Show the complete dictionaries
         self.debug_print("\n[PRESERVED] _preserved_term_markers dictionary:", level='detail')
@@ -411,8 +471,12 @@ class FileRenamer:
         for norm, (term, marker) in self._normalized_terms.items():
             self.debug_print(f"  {norm!r} → ({term!r}, {marker!r})", level='detail')
 
+        self.debug_print("\n[PRESERVED] _cleaned_terms dictionary:", level='detail')
+        for orig, cleaned in self._cleaned_terms.items():
+            self.debug_print(f"  {orig!r} → {cleaned!r}", level='detail')
+
         # First try exact matches (case-insensitive)
-        for term in self.PRESERVED_TERMS:
+        for term in self._cleaned_terms.values():  # Use cleaned terms for matching
             # Replace the term with its marker
             new_text = re.sub(rf'\b{re.escape(term)}\b', self._preserved_term_markers[term], text, flags=re.IGNORECASE)
             if new_text != text:
@@ -421,17 +485,23 @@ class FileRenamer:
 
         # Then try flexible matching for each preserved term
         # This handles variations in spacing, punctuation, and capitalization
-        for term in self.PRESERVED_TERMS:
+        for orig_term, term in self._cleaned_terms.items():
             # Skip single-word terms as they're already handled by exact matching
-            if ' ' not in term and '-' not in term and '.' not in term and '&' not in term:
+            # Check for any word boundary characters using WORD_BOUNDARY_CHARS
+            if not any(char in term for char in self.WORD_BOUNDARY_CHARS):
                 continue
 
             # Get the normalized form of the term (lowercase, no spaces or punctuation)
-            normalized_term = re.sub(r'[\s\-.,;:"&!?()]', '', term.lower())
+            # Use the consistent normalization pattern based on WORD_BOUNDARY_CHARS
+            normalized_term = self._normalization_pattern.sub('', term.lower())
 
             # Create a pattern that allows flexible spacing and punctuation between words
-            # Split the term into words
-            words = re.findall(r'[a-zA-Z0-9]+', term)
+            # Split the term into words using WORD_BOUNDARY_CHARS as delimiters
+            # Create a regex pattern for splitting based on WORD_BOUNDARY_CHARS
+            split_pattern = f"[{''.join(re.escape(char) for char in self.WORD_BOUNDARY_CHARS)}]+"
+            words = re.split(split_pattern, term)
+            # Filter out empty strings from the split result
+            words = [word for word in words if word]
 
             if len(words) > 1:
                 # For multi-word terms, create a pattern that allows flexible spacing/punctuation
@@ -450,8 +520,8 @@ class FileRenamer:
                 matches = re.findall(pattern, text, flags=re.IGNORECASE)
 
                 for match in matches:
-                    # Normalize the match for comparison
-                    normalized_match = re.sub(r'[\s\-.,;:"&!?()]', '', match.lower())
+                    # Normalize the match for comparison using the consistent pattern
+                    normalized_match = self._normalization_pattern.sub('', match.lower())
 
                     # Check if the normalized match is exactly the normalized term
                     if normalized_match == normalized_term:
@@ -462,13 +532,15 @@ class FileRenamer:
         # General approach for all terms - check for normalized matches in word groups
         # Use a pattern that captures word groups more effectively
         # This pattern handles words at the beginning/end of text and with special characters
-        # It looks for groups of characters separated by spaces or string boundaries
-        words = re.findall(r'(?:^|\s)([\w\-.,;:"&!?()]+)(?:\s|$)', text)
+        # Create a pattern based on WORD_BOUNDARY_CHARS that captures word groups
+        boundary_chars = ''.join(re.escape(char) for char in self.WORD_BOUNDARY_CHARS)
+        word_pattern = f"(?:^|[{boundary_chars}])([^{boundary_chars}]+)(?:[{boundary_chars}]|$)"
+        words = re.findall(word_pattern, text)
         self.debug_print(f"[PRESERVED] Found {len(words)} word groups to check", level='detail')
 
         for word_group in words:
-            # Normalize the word group
-            normalized_group = re.sub(r'[\s\-.,;:"&!?()]', '', word_group.lower())
+            # Normalize the word group using the consistent normalization pattern
+            normalized_group = self._normalization_pattern.sub('', word_group.lower())
             self.debug_print(f"[PRESERVED] Checking: {word_group!r} → Normalized: {normalized_group!r}", level='detail')
 
             # Check if this normalized group exactly matches any of our terms
@@ -479,6 +551,34 @@ class FileRenamer:
                 self.debug_print(f"[PRESERVED] Normalized match: {word_group!r} → {original_term!r}", level='verbose')
 
         return text
+
+    def _validate_preserved_term(self, term):
+        """
+        Validate a preserved term to ensure it meets requirements.
+
+        Args:
+            term: The term to validate
+
+        Returns:
+            bool: True if the term is valid, False otherwise
+        """
+        # Length validation
+        if len(term) < 2:
+            self.debug_print(f"[PRESERVED] Term too short: {term!r}", level='detail')
+            return False
+
+        if len(term) > 200:
+            self.debug_print(f"[PRESERVED] Term too long: {term!r}", level='detail')
+            return False
+
+        # Check for control characters or other problematic characters
+        if any(ord(c) < 32 or ord(c) == 127 for c in term):
+            self.debug_print(f"[PRESERVED] Term contains control characters: {term!r}", level='detail')
+            return False
+
+        # Additional security checks could be added here if needed
+
+        return True
 
     def _restore_preserved_terms(self, parts):
         """
@@ -629,8 +729,8 @@ class FileRenamer:
         # not handled properly, gets broken up at hyphen into parts
 
         # TV Networks
-        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS',
-        'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC',
+        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS', 'MSNBC',
+        'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC', 'O\'Donnell', 'O\'Reilly',
 
         # US States (excluding those that conflict with common words, see KEEP_CAPITALIZED_IF_ALLCAPS)
         'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'FL',
@@ -702,6 +802,13 @@ class FileRenamer:
         'DNS', 'FTP', 'SSH', 'SSL', 'TLS', 'URL', 'URI', 'API', 'SDK',
         'IDE', 'GUI', 'CLI', 'CSS', 'RSS', 'UPC', 'UPS','QR', 'AI', 'ML',
 
+        # Time/Date
+        'UTC', 'UTC+', 'UTC-', 'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT',
+        'AKST', 'AKDT', 'HST', 'HDT', 'AST', 'ADT', 'NST', 'NDT',
+        'BST', 'BDT', 'CST', 'CDT', 'EST', 'EDT', 'GMT', 'HAT', 'HNT', 'IST', 'JST',
+        'KST', 'MDT', 'MESZ', 'MET', 'MST', 'MDT', 'PDT', 'PST', 'SST', 'UTC', 'WET',
+        'WST', 'YST', 'YST', 'ZST',
+
         # Media Formats
         # Images
         'JPEG', 'JPG', 'PNG', 'GIF', 'BMP', 'TIF', 'TIFF', 'SVG', 'WebP',
@@ -714,7 +821,7 @@ class FileRenamer:
 
         # Medical/Scientific
         'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
-        'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER',
+        'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER', 'ISS', 'STS',
 
         # Business/Organizations
         'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
@@ -724,10 +831,10 @@ class FileRenamer:
 
         # Other Common
         'ID', 'OK', 'PC', 'PIN', 'PO', 'ps', 'RIP', 'UFO', 'VIP', 'ZIP',
-        'DIY', 'FAQ', 'ASAP', 'IMAX',
+        'DIY', 'FAQ', 'ASAP', 'IMAX', 'AGT', 'BGT',
 
         # Software/Platforms
-        'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL',
+        'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'SEO',
     }
 
     # Month names and abbreviations with proper capitalization
@@ -1035,9 +1142,6 @@ class FileRenamer:
         Validate the CHAR_REPLACEMENTS dictionary.
         Raises ValueError if any replacement is invalid.
         """
-
-        print("\n===== program name is " + __name__ + " =====\n")
-
         for original_char, replacement_char in cls.CHAR_REPLACEMENTS.items():
             if not isinstance(original_char, str) or not isinstance(replacement_char, str):
                 raise ValueError(
@@ -1323,43 +1427,20 @@ class FileRenamer:
         # Just collapse any multiple spaces that might have been introduced during processing
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
 
-        # First preserve hyphenated abbreviations and company names
-        # This must happen BEFORE special character replacements (especially & -> and)
+        # First replace special characters
+        self.debug_print(f"Before replacements: {name!r}", level='normal')
+        name = self._replace_special_chars(name)
+
+        # Then preserve hyphenated abbreviations and company names
+        # This now happens AFTER special character replacements
+        # The preserved terms will also have been processed with the same replacements
         name = self._preserve_special_terms(name)
-
-        # Replace special characters
-        # self.debug_print(f"Before replacements: {name!r}", level='normal')
-
-        # Function to colorize replacement chars
-        def colorize(char):
-            return f"{Fore.CYAN}{char}{Style.RESET_ALL}"
-
-        # Handle fractions first (digit/digit with optional spaces)
-        name = re.sub(r'(\d)\s*/\s*(\d)', fr'\1{R["/"]}\2', name)
-
-        # Handle multi-char sequences (like ellipsis, brackets)
-        for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
-            if len(original_char) > 1:  # Multi-char replacement
-                if original_char in name:
-                    self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
-                    if original_char == '...':
-                        # Handle ellipsis specially to match 3 or more dots
-                        name = re.sub(r'\.{3,}', replacement_char, name)
-                    else:
-                        name = name.replace(original_char, replacement_char)
-
-        # Handle single-char replacements
-        for original_char, replacement_char in self.CHAR_REPLACEMENTS.items():
-            if len(original_char) == 1:  # Single-char replacements
-                if original_char in name:
-                    self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
-                    name = re.sub(f'{re.escape(original_char)}+', replacement_char, name)
 
         # Show replaced characters in color in the final output
         colored_parts = []
         for c in name:
             if any(c == repl for repl in R.values()):
-                colored_parts.append(colorize(c))
+                colored_parts.append(FileRenamer.colorize(c))
             else:
                 colored_parts.append(c)
         colored_name = ''.join(colored_parts)
@@ -1749,8 +1830,7 @@ class FileRenamer:
                             # already processed parts in the next iterations
                             self.debug_print(f"  Found unit at index {i}, marked parts {i} to {unit_end_index} as processed")
                             self.debug_print(f"  Next parts to process: {parts[unit_end_index+1:]!r}" if unit_end_index+1 < len(parts) else "  No more parts to process")
-                            self.debug_print(f"  Current filename being processed: {name!r}")
-                            self.debug_print(f"  DEBUG: titled_parts after unit found: {titled_parts!r}")
+                            self.debug_print(f"  titled_parts after unit found: {titled_parts!r}")
                             # Important: Continue with the main loop after processing this unit
                             # This only breaks out of the inner loop that was checking for unit patterns
                             break
@@ -2097,7 +2177,7 @@ def main():
                 else:
                     colored_parts.append(c)
             colored_new = ''.join(colored_parts)
-            print(f"{old}\n  -> {colored_new}\n")
+            print(f"   {old}\n-> {colored_new}\n")
 
     if not any_changes:
         print("\nNo files need to be renamed.")
