@@ -133,3 +133,59 @@ if __name__ == '__main__':
 ```
 
 This is sufficient for scripts that don't need the more advanced features of the full pattern.
+
+## Testing Your Global Exception Handler
+
+To verify that your global exception handler is working correctly, you can add code that deliberately triggers an exception. This helps confirm that:
+
+1. Unhandled exceptions are properly caught by the global handler
+2. The error information is displayed correctly
+3. The traceback shows the exact location of the error
+
+### Example Code
+
+Add this code to your main function, outside of any try-except blocks:
+
+```python
+# Deliberately trigger an exception to demonstrate the global exception handler
+# This code is outside any try-except block to show how the global handler works
+# To trigger the exception, set the TRIGGER_EXCEPTION environment variable to 'true'
+# TRIGGER_EXCEPTION=true python your_script.py [arguments]
+
+if os.environ.get('TRIGGER_EXCEPTION', '').lower() == 'true':
+    print("\nDeliberately triggering an exception to demonstrate the global exception handler...")
+    # This will raise a ZeroDivisionError
+    result = 1 / 0
+    # This line will never be reached
+    print(f"Result: {result}")
+```
+
+### Running the Test
+
+To test the global exception handler, run your script with the environment variable set:
+
+```bash
+TRIGGER_EXCEPTION=true python your_script.py [arguments]
+```
+
+### Expected Output
+
+You should see output similar to this:
+
+```
+Deliberately triggering an exception to demonstrate the global exception handler...
+
+Unhandled exception: ZeroDivisionError: division by zero
+
+Detailed traceback:
+Traceback (most recent call last):
+  File "/path/to/your_script.py", line XXX, in <module>
+    main()
+  File "/path/to/your_script.py", line YYY, in main
+    result = 1 / 0
+ZeroDivisionError: division by zero
+
+Please report this error with the above information.
+```
+
+This confirms that your global exception handler is working correctly and providing useful debugging information.

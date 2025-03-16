@@ -1427,14 +1427,23 @@ class FileRenamer:
         # Just collapse any multiple spaces that might have been introduced during processing
         name = re.sub(r' {2,}', ' ', name)  # Collapse multiple spaces
 
-        # First replace special characters
-        self.debug_print(f"Before replacements: {name!r}", level='normal')
-        name = self._replace_special_chars(name)
+        try:
+            # First replace special characters
+            self.debug_print(f"Before replacements: {name!r}", level='normal')
+            name = self._replace_special_chars(name)
+            self.debug_print(f"After special char replacements: {name!r}", level='normal')
 
-        # Then preserve hyphenated abbreviations and company names
-        # This now happens AFTER special character replacements
-        # The preserved terms will also have been processed with the same replacements
-        name = self._preserve_special_terms(name)
+            # Then preserve hyphenated abbreviations and company names
+            # This now happens AFTER special character replacements
+            # The preserved terms will also have been processed with the same replacements
+            name = self._preserve_special_terms(name)
+            self.debug_print(f"After preserving special terms: {name!r}", level='normal')
+        except Exception as e:
+            import traceback
+            self.debug_print(f"\nEXCEPTION in clean_filename: {type(e).__name__}: {e}", level='normal')
+            self.debug_print("\nDetailed traceback:", level='normal')
+            self.debug_print(traceback.format_exc(), level='normal')
+            raise
 
         # Show replaced characters in color in the final output
         colored_parts = []
@@ -1529,506 +1538,545 @@ class FileRenamer:
                 if part and len(part) > 1 and not any(c in self.WORD_BOUNDARY_CHARS for c in part):
                     last_real_word = part.lower()
 
-            # Now process each part
-            for i, part in enumerate(parts):
-                self.debug_print(f"\nProcessing part {i}: {part!r} (len={len(part)}, has_boundary={[c for c in part if c in self.WORD_BOUNDARY_CHARS]})")
+            # Now process each part with error trapping
+            try:
+                for i, part in enumerate(parts):
+                    self.debug_print(f"\nProcessing part {i}: {part!r} (len={len(part)}, has_boundary={[c for c in part if c in self.WORD_BOUNDARY_CHARS]})")
 
-                # Check if this part contains a preserved term marker
-                if any(marker_prefix in part.upper() for marker_prefix in ["__PRESERVED_TERM_"]):
-                    # Find which original term this marker corresponds to
-                    original_term = "unknown"
-                    for marker, term in self._preserved_term_originals.items():
-                        if marker.strip() in part:
-                            original_term = term
-                            break
+                    # Check if this part contains a preserved term marker
+                    if any(marker_prefix in part.upper() for marker_prefix in ["__PRESERVED_TERM_"]):
+                        # Find which original term this marker corresponds to
+                        original_term = "unknown"
+                        for marker, term in self._preserved_term_originals.items():
+                            if marker.strip() in part:
+                                original_term = term
+                                break
 
-                    titled_parts.append(part)
-                    self.debug_print(f"  Preserving marker as-is: {part!r} (original: {original_term!r})")
-                    prev_part = part
-                    continue
-
-                # Check if this part is in the PRESERVED_TERMS list - if so, add it as-is and skip processing
-                if part in self.PRESERVED_TERMS:
-                    titled_parts.append(part)
-                    self.debug_print(f"  Preserving term as-is: {part!r}")
-                    prev_part = part
-                    continue
-
-
-                # Convert to title case, handling special cases
-                word = part.lower()  # First convert to lowercase
-                # self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
-
-                # Process parts in this order:
-                # 1. Abbreviation check (e.g. M.D., Lt.Col)
-                # 2. Contraction/possessive check (e.g. CEO's, we'd)
-                # 3. Unit check (e.g. 5kb, 10s)
-                # important since abbreviations and units can be contractions/possessives ("I'd" vs "M. D." vs "5 d" or "John's" vs "10 s"). Contractions/possessives must be immediately preceded by an apostrophe-like character.
-
-                self.debug_print(f"⮑ Word: {word!r} (prev_part={prev_part!r}, Found Abbrev: {titled_parts[-1] if titled_parts and titled_parts[-1] in self.ABBREVIATIONS else None}, PriorDatePart: {prior_date_part})")
-                # Check for contractions/possessives first (before unit check)
-                if word in self.CONTRACTIONS and len(titled_parts) >= 2:
-                    # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
-                    base_word = titled_parts[-2] if len(titled_parts) >= 2 else ''
-                    if prev_part in self.QUOTE_LIKE_CHARS and not base_word.isspace():
-                        # Remove the previous apostrophe and base word
-                        titled_parts.pop()  # Remove apostrophe
-                        base = titled_parts.pop()  # Remove base word
-
-                        # Add all parts of the contraction back to titled_parts
-                        titled_parts.extend([base, self.APOSTROPHE_REPLACEMENT, word])
-
-                        self.debug_print(f"  Contraction check: {word} (base={base})")
-                        self.debug_print(f"    ✓ Accepted: {base}{self.APOSTROPHE_REPLACEMENT}{word}")
-
-                        # Keep the full contraction as prev_part (like compound abbreviations)
-                        prev_part = f"{base}{self.APOSTROPHE_REPLACEMENT}{word}"
-                        continue
-                    # self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
-
-                # Skip empty parts
-                # if not word:
-                #     continue
-
-                # Handle periods after abbreviations or dates
-                if part == '.' and (prior_abbreviation or prior_date_part):
-                    self.debug_print(f"  ⮑ Period handling state:    Current part: {part!r} (prev={prev_part!r})")
-                    self.debug_print(f"    Prior state: abbrev={prior_abbreviation}, date={prior_date_part}")
-                    self.debug_print(f"    Titled parts so far: {titled_parts}")
-                    self.debug_print(f"    Last titled part: {titled_parts[-1]!r}")
-                    self.debug_print(f"    Next parts: {parts[i+1:i+3]!r}")
-                    self.debug_print(f"    Is month format: {titled_parts[-1] in self.MONTH_FORMATS}")
-                    self.debug_print(f"    Skipping period: reason={'month format' if titled_parts[-1] in self.MONTH_FORMATS else 'prior date part' if prior_date_part else 'abbreviation' if prior_abbreviation else 'unknown'}")
-                    # If we already added this period, remove it since it follows an abbreviation
-                    if titled_parts and titled_parts[-1] == '.':
-                        titled_parts.pop()
-                        self.debug_print(f"    Removed period from titled_parts")
-                    prev_part = part
-                    continue
-
-                # Handle other word boundary characters
-                if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
-                    # self.debug_print(f"Keeping separator: {part!r}")
-                    titled_parts.append(part)
-                    prev_part = part
-                    # Only reset prev_was_abbrev for spaces and periods
-                    if part in {' ', '.'}:
-                        prev_was_abbrev = False
-                    continue
-
-                # First check if this part could be part of an abbreviation
-                # This must come before unit/contraction checks to properly handle cases like:
-                # - "m.d" -> "MD" (abbreviation)
-                # - "10d" -> "10d" (unit)
-                # - "I'd" -> "I'd" (contraction)
-                # Only debug abbreviation check if this might be an abbreviation
-                if part.isalpha() or (len(part) > 1 and any(c.isalpha() for c in part)):
-                    self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
-                    try:
-                        self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
-                    except IndexError:
-                        self.debug_print(f"    Error Checking Abbreviation:    titled_parts={titled_parts!r}")
-
-                if part.isalpha():
-                    # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
-                    if prev_part == '.' and titled_parts:
-                        self.debug_print(f"  Compound check: prev={titled_parts[-2]!r}, current={part!r}")
-                    if prev_part == '.':
-                        try:
-                            if (titled_parts[-2] in self.ABBREVIATIONS or
-                               (titled_parts[-2].isdigit() and part.upper() in self.MONTH_FORMATS.upper())):
-                                self.debug_print(f"  ✓ Found compound pattern match: {titled_parts[-2]!r}.{part}")
-                        except IndexError:
-                            # Skip this block if titled_parts[-2] doesn't exist
-                            self.debug_print(f"    Skipping compound check: insufficient parts")
-
-                        try:
-                            # Get first abbreviation before loop
-                            first_abbrev = titled_parts[-2]    # e.g. "Lt"
-                            second_abbrev = None  # Initialize to None
-
-                            # Check if first part is an abbreviation
-                            first_abbrev_upper = first_abbrev.upper()
-                            is_first_part_abbrev = any(a.upper() == first_abbrev_upper for a in self.ABBREVIATIONS)
-                            if is_first_part_abbrev:
-                                self.debug_print(f"    First part {first_abbrev!r} is an abbreviation")
-
-                            if is_first_part_abbrev:
-                                # Only check second part if first part is an abbreviation
-                                for abbr in self.ABBREVIATIONS:
-                                    if part.upper() == abbr.upper():
-                                        # Found abbreviation-period-abbreviation pattern
-                                        second_abbrev = abbr  # Use case from ABBREVIATIONS
-
-                                        # Combine abbreviations
-                                        try:
-                                            titled_parts[-2] = first_abbrev + second_abbrev
-                                            self.debug_print(f"  ✓ Combined: {first_abbrev!r}.{second_abbrev!r} → {titled_parts[-2]!r}")
-                                            # Remove the period
-                                            titled_parts.pop(-1)
-                                        except Exception as e:
-                                            self.debug_print(f"    ERROR in combine: {e}")
-
-                                        # Update tracking variables
-                                        if titled_parts:
-                                            prev_part = titled_parts[-1]  # Now points to the combined abbreviation after period removal
-                                            prev_was_abbrev = True
-                                            prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
-                                        else:
-                                            self.debug_print(f"    WARNING: titled_parts is empty after combine operation")
-                                        break
-
-                            if not is_first_part_abbrev and part.upper() in [a.upper() for a in self.ABBREVIATIONS]:
-                                self.debug_print(f"    Not combined: {first_abbrev!r} is not an abbreviation, but {part!r} is")
-                            self.debug_print(f"    Result: {''.join(titled_parts)!r}")
-
-                            if second_abbrev is not None:
-                                continue
-                        except IndexError:
-                            # Skip this block if titled_parts[-2] doesn't exist
-                            self.debug_print(f"    Skipping compound abbreviation check due to insufficient titled_parts")
-
-                    # Otherwise check for normal abbreviation
-                    elif titled_parts and prev_part == '.':
-                        self.debug_print(f"  ✓ Found potential SINGLE abbreviation part")
-                        # Check if current part with previous parts forms an abbreviation
-                        # For example: current='d', prev=['M', '.'] -> 'M.d' -> 'MD'
-                        is_last = i == len(parts) - 1 or all(p in self.WORD_BOUNDARY_CHARS for p in parts[i+1:])
-
-                        if self._check_abbreviation_with_context(word, titled_parts, is_last):
-                            prev_part = word
-                            prev_was_abbrev = True
-                            continue
-
-                # Special case: AM/PM after numbers (including when joined like "9am")
-                if re.match(r'\d+[ap]m\b', word, re.IGNORECASE):
-                    self.debug_print(f"Found time with AM/PM: {word!r}")
-                    num = re.search(r'\d+', word, re.IGNORECASE).group()
-                    ampm = word[len(num):].upper()
-                    titled_parts.append(f"{num}{ampm}")
-                    prev_part = part
-                    continue
-
-                # Check for special case words (Wi-Fi, etc.)
-                word_lower = word.lower()
-                if word_lower == 'wifi':  # Convert all variants to Wi-Fi
-                    titled_parts.append('Wi-Fi')
-                    prev_part = part
-                    prior_abbreviation = None  # Reset for non-abbreviation
-                    continue
-                for special_word in self.SPECIAL_CASE_WORDS:
-                    if word_lower == special_word.lower():
-                        titled_parts.append(special_word)
+                        titled_parts.append(part)
+                        self.debug_print(f"  Preserving marker as-is: {part!r} (original: {original_term!r})")
                         prev_part = part
                         continue
 
-                # Handle common unit patterns (GB, MHz, etc.)
-                found_unit = False
-                word_lower = word.lower()
+                    # Check if this part is in the PRESERVED_TERMS list - if so, add it as-is and skip processing
+                    if part in self.PRESERVED_TERMS:
+                        titled_parts.append(part)
+                        self.debug_print(f"  Preserving term as-is: {part!r}")
+                        prev_part = part
+                        continue
 
-                # Try unit patterns for:
-                # 1. Standard units (GB, MHz, Ω, etc.)
-                # 2. Dates with month abbreviations (2025jan12, jan2025)
-                # 3. Units after a slash (30km/hr)
-                # This must come before abbreviation check to handle concatenated formats
-                if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω][h]?', word_lower) or  # Standard units (including compound like wh)
-                    re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or      # Date formats
-                    word_lower in self.STANDALONE_UNITS or                # Standalone units
-                    word_lower.isdigit()):                               # Standalone digits for space-separated units
-                    self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
-                    self.debug_print(f"  Context: parts[{i}] in {parts[max(0,i-1):min(len(parts),i+3)]!r}")
 
-                    # Initialize unit tracking
-                    unit_end_index = i  # Index of the last part of this unit (initially just the current part)
-                    unit_parts = [part]  # Track all parts of the unit
-                    test_word = word_lower
-                    original_parts = [part]
+                    # Convert to title case, handling special cases
+                    word = part.lower()  # First convert to lowercase
+                    # self.debug_print(f"  After case conversion: {part!r} -> {word!r}")
 
-                    # Check for space-separated units (e.g. "5 kb" or "5 g")
-                    if parts[i].strip().isdigit() and i + 2 < len(parts) and parts[i+1].strip() == ' ':
-                        self.debug_print(f"  Checking for space-separated unit at index {i}: {parts[i:i+3]!r}")
-                        # Check if the part after the space is a valid unit
-                        next_part = parts[i+2].strip().lower()
-                        if re.match(r'^[kmgtw]?[wvajnlhzbfg]', next_part) or next_part in self.STANDALONE_UNITS:
-                            # Include space and unit part
-                            unit_parts.extend([parts[i+1], parts[i+2]])
-                            original_parts.extend([parts[i+1], parts[i+2]])
-                            test_word = word_lower + next_part
-                            unit_end_index = i + 2  # Update to include the space and unit part
-                            self.debug_print(f"  Found space-separated unit: {unit_parts!r}")
+                    # Process parts in this order:
+                    # 1. Abbreviation check (e.g. M.D., Lt.Col)
+                    # 2. Contraction/possessive check (e.g. CEO's, we'd)
+                    # 3. Unit check (e.g. 5kb, 10s)
+                    # important since abbreviations and units can be contractions/possessives ("I'd" vs "M. D." vs "5 d" or "John's" vs "10 s"). Contractions/possessives must be immediately preceded by an apostrophe-like character.
 
-                    self.debug_print(f"  Testing unit pattern: {test_word!r}  Original parts: {original_parts!r}")
+                    self.debug_print(f"⮑ Word: {word!r} (prev_part={prev_part!r}, Found Abbrev: {titled_parts[-1] if titled_parts and titled_parts[-1] in self.ABBREVIATIONS else None}, PriorDatePart: {prior_date_part})")
+                    # Check for contractions/possessives first (before unit check)
+                    if word in self.CONTRACTIONS and len(titled_parts) >= 2:
+                        # Get the full contraction (e.g., 'Didn't' from ['Didn', "'", 't'])
+                        base_word = titled_parts[-2] if len(titled_parts) >= 2 else ''
+                        if prev_part in self.QUOTE_LIKE_CHARS and not base_word.isspace():
+                            # Remove the previous apostrophe and base word
+                            titled_parts.pop()  # Remove apostrophe
+                            base = titled_parts.pop()  # Remove base word
 
-                    # Try to match unit patterns
-                    for pattern, formatter in sorted(self.UNIT_PATTERNS.items(), key=lambda x: len(x[0]), reverse=True):
-                        match = re.match(f'^{pattern}$', test_word, re.IGNORECASE)
-                        if match:  # Case-insensitive exact match
-                            # For bits/bytes and bps units, enforce prefix case but preserve b/B
-                            if re.search(r'\d+[kmgt]?b(?:ps)?\b', test_word, re.IGNORECASE):
-                                # Find the unit part (kb, MB, bps, Bps etc)
-                                unit_match = re.search(r'[kmgt]?b(?:ps)?\b', test_word, re.IGNORECASE)
-                                if unit_match:
-                                    # Get original case for just the b/B part
-                                    orig_b_case = None
-                                    for p in original_parts:
-                                        if unit_match.group().lower() in p.lower():
-                                            # Match the b/B and optional ps
-                                            b_pattern = r'[bB](?:[pP][sS])?\b'
-                                            b_search = re.search(b_pattern, p)
-                                            if b_search:
-                                                orig_b_case = b_search.group()
-                                                break
+                            # Add all parts of the contraction back to titled_parts
+                            titled_parts.extend([base, self.APOSTROPHE_REPLACEMENT, word])
 
-                                    if orig_b_case:
-                                        # Extract the prefix and number
-                                        prefix_match = re.match(r'(\d+)([kmgt])?', test_word, re.IGNORECASE)
-                                        if prefix_match:
-                                            number = prefix_match.group(1)
-                                            prefix = prefix_match.group(2)
+                            self.debug_print(f"  Contraction check: {word} (base={base})")
+                            self.debug_print(f"    ✓ Accepted: {base}{self.APOSTROPHE_REPLACEMENT}{word}")
 
-                                            # Apply prefix case rules
-                                            if prefix:
-                                                if prefix.lower() == 'k':
-                                                    prefix = 'k'  # Always lowercase
-                                                else:
-                                                    prefix = prefix.upper()  # M, G, T always uppercase
+                            # Keep the full contraction as prev_part (like compound abbreviations)
+                            prev_part = f"{base}{self.APOSTROPHE_REPLACEMENT}{word}"
+                            continue
+                        # self.debug_print(f"    ✗ Rejected: not after word + apostrophe")
 
-                                            # Combine with preserved b/B case
-                                            formatted = f"{number}{prefix or ''}{orig_b_case}"
-                                            self.debug_print(f"    Applied case rules: {test_word!r} -> {formatted!r}")
-                                    else:
-                                        formatted = formatter(test_word)
-                            else:
-                                # Apply normal unit formatting
-                                formatted = formatter(test_word)
+                    # Skip empty parts
+                    # if not word:
+                    #     continue
 
-                            unit_debug = f"✓ Unit: {formatted!r} (from={original_parts!r}, pattern={pattern!r})"
-                            self.debug_print(f"    Applied formatter: {test_word!r} -> {formatted!r}")
+                    # Handle periods after abbreviations or dates
+                    if part == '.' and (prior_abbreviation or prior_date_part):
+                        self.debug_print(f"  ⮑ Period handling state:    Current part: {part!r} (prev={prev_part!r})")
+                        self.debug_print(f"    Prior state: abbrev={prior_abbreviation}, date={prior_date_part}")
+                        self.debug_print(f"    Titled parts so far: {titled_parts}")
+                        self.debug_print(f"    Last titled part: {titled_parts[-1]!r}")
+                        self.debug_print(f"    Next parts: {parts[i+1:i+3]!r}")
+                        self.debug_print(f"    Is month format: {titled_parts[-1] in self.MONTH_FORMATS}")
+                        self.debug_print(f"    Skipping period: reason={'month format' if titled_parts[-1] in self.MONTH_FORMATS else 'prior date part' if prior_date_part else 'abbreviation' if prior_abbreviation else 'unknown'}")
+                        # If we already added this period, remove it since it follows an abbreviation
+                        if titled_parts and titled_parts[-1] == '.':
+                            titled_parts.pop()
+                            self.debug_print(f"    Removed period from titled_parts")
+                        prev_part = part
+                        continue
 
-                            # Mark all parts that make up this unit as processed
-                            unit_start_index = i  # Start index of the unit (current part)
-                            self.debug_print(f"  Marking parts from unit_start_index={unit_start_index} to unit_end_index={unit_end_index} as processed")
-                            for idx in range(unit_start_index, unit_end_index+1):
-                                processed_parts[idx] = f"part of {unit_debug}"
+                    # Handle other word boundary characters
+                    if len(part) == 1 and part in self.WORD_BOUNDARY_CHARS:
+                        # self.debug_print(f"Keeping separator: {part!r}")
+                        titled_parts.append(part)
+                        prev_part = part
+                        # Only reset prev_was_abbrev for spaces and periods
+                        if part in {' ', '.'}:
+                            prev_was_abbrev = False
+                        continue
 
-                            # Add the formatted unit preserving any spaces
-                            # Replace the matched content with formatted version
-                            parts_with_spaces = []
-                            for p in original_parts:
-                                if p.strip().lower() == test_word.lower():
-                                    parts_with_spaces.append(formatted)
-                                else:
-                                    parts_with_spaces.append(p)
+                    # First check if this part could be part of an abbreviation
+                    # This must come before unit/contraction checks to properly handle cases like:
+                    # - "m.d" -> "MD" (abbreviation)
+                    # - "10d" -> "10d" (unit)
+                    # - "I'd" -> "I'd" (contraction)
+                    # Only debug abbreviation check if this might be an abbreviation
+                    if part.isalpha() or (len(part) > 1 and any(c.isalpha() for c in part)):
+                        self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
+                        try:
+                            self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
+                        except IndexError:
+                            self.debug_print(f"    Error Checking Abbreviation:    titled_parts={titled_parts!r}")
 
-                            formatted_with_spaces = ''.join(parts_with_spaces)
-                            titled_parts.append(formatted_with_spaces)
-                            prev_part = formatted  # Store just the unit as prev_part
+                    if part.isalpha():
+                        # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
+                        if prev_part == '.' and titled_parts:
+                            self.debug_print(f"  Compound check: prev={titled_parts[-2]!r}, current={part!r}")
+                        if prev_part == '.':
+                            try:
+                                if (titled_parts[-2] in self.ABBREVIATIONS or
+                                   (titled_parts[-2].isdigit() and part.upper() in self.MONTH_FORMATS.upper())):
+                                    self.debug_print(f"  ✓ Found compound pattern match: {titled_parts[-2]!r}.{part}")
+                            except IndexError:
+                                # Skip this block if titled_parts[-2] doesn't exist
+                                self.debug_print(f"    Skipping compound check: insufficient parts")
 
-                            self.debug_print(f"  {unit_debug}")
-                            found_unit = True
-                            # Don't modify loop counter directly, we'll use processed_parts to skip
-                            # already processed parts in the next iterations
-                            self.debug_print(f"  Found unit at index {i}, marked parts {i} to {unit_end_index} as processed")
-                            self.debug_print(f"  Next parts to process: {parts[unit_end_index+1:]!r}" if unit_end_index+1 < len(parts) else "  No more parts to process")
-                            self.debug_print(f"  titled_parts after unit found: {titled_parts!r}")
-                            # Important: Continue with the main loop after processing this unit
-                            # This only breaks out of the inner loop that was checking for unit patterns
-                            break
+                            try:
+                                # Get first abbreviation before loop
+                                first_abbrev = titled_parts[-2]    # e.g. "Lt"
+                                second_abbrev = None  # Initialize to None
 
-                    if not found_unit:
-                        # Only try number-word if no unit pattern matched
-                        if re.match(r'^\d+[a-z]+$', word_lower):
-                            self.debug_print(f"  Found number-word: {word!r}")
-                            # Find where the numbers end and letters begin
-                            match = re.match(r'^(\d+)([a-z]+)$', word_lower)
-                            if match:
-                                numbers, letters = match.groups()
-                                word = numbers + letters[0].upper() + letters[1:]
-                                titled_parts.append(word)
+                                # Check if first part is an abbreviation
+                                first_abbrev_upper = first_abbrev.upper()
+                                is_first_part_abbrev = any(a.upper() == first_abbrev_upper for a in self.ABBREVIATIONS)
+                                if is_first_part_abbrev:
+                                    self.debug_print(f"    First part {first_abbrev!r} is an abbreviation")
+
+                                if is_first_part_abbrev:
+                                    # Only check second part if first part is an abbreviation
+                                    for abbr in self.ABBREVIATIONS:
+                                        if part.upper() == abbr.upper():
+                                            # Found abbreviation-period-abbreviation pattern
+                                            second_abbrev = abbr  # Use case from ABBREVIATIONS
+
+                                            # Combine abbreviations
+                                            try:
+                                                titled_parts[-2] = first_abbrev + second_abbrev
+                                                self.debug_print(f"  ✓ Combined: {first_abbrev!r}.{second_abbrev!r} → {titled_parts[-2]!r}")
+                                                # Remove the period
+                                                titled_parts.pop(-1)
+                                            except Exception as e:
+                                                self.debug_print(f"    ERROR in combine: {e}")
+
+                                            # Update tracking variables
+                                            if titled_parts:
+                                                prev_part = titled_parts[-1]  # Now points to the combined abbreviation after period removal
+                                                prev_was_abbrev = True
+                                                prior_abbreviation = titled_parts[-1]  # Track compound as prior_abbreviation
+                                            else:
+                                                self.debug_print(f"    WARNING: titled_parts is empty after combine operation")
+                                            break
+
+                                if not is_first_part_abbrev and part.upper() in [a.upper() for a in self.ABBREVIATIONS]:
+                                    self.debug_print(f"    Not combined: {first_abbrev!r} is not an abbreviation, but {part!r} is")
+                                self.debug_print(f"    Result: {''.join(titled_parts)!r}")
+
+                                if second_abbrev is not None:
+                                    continue
+                            except IndexError:
+                                # Skip this block if titled_parts[-2] doesn't exist
+                                self.debug_print(f"    Skipping compound abbreviation check due to insufficient titled_parts")
+
+                        # Otherwise check for normal abbreviation
+                        elif titled_parts and prev_part == '.':
+                            self.debug_print(f"  ✓ Found potential SINGLE abbreviation part")
+                            # Check if current part with previous parts forms an abbreviation
+                            # For example: current='d', prev=['M', '.'] -> 'M.d' -> 'MD'
+                            is_last = i == len(parts) - 1 or all(p in self.WORD_BOUNDARY_CHARS for p in parts[i+1:])
+
+                            if self._check_abbreviation_with_context(word, titled_parts, is_last):
                                 prev_part = word
-                                processed_parts[i] = f"number-word: {word!r}"
+                                prev_was_abbrev = True
                                 continue
-                        self.debug_print(f"  No unit pattern match found")
 
-                # Skip this part if it's already been processed as part of a unit
-                # This replaces the previous 'if found_unit: continue' approach
-                # try:
+                    # Special case: AM/PM after numbers (including when joined like "9am")
+                    if re.match(r'\d+[ap]m\b', word, re.IGNORECASE):
+                        self.debug_print(f"Found time with AM/PM: {word!r}")
+                        num = re.search(r'\d+', word, re.IGNORECASE).group()
+                        ampm = word[len(num):].upper()
+                        titled_parts.append(f"{num}{ampm}")
+                        prev_part = part
+                        continue
+
+                    # Check for special case words (Wi-Fi, etc.)
+                    word_lower = word.lower()
+                    if word_lower == 'wifi':  # Convert all variants to Wi-Fi
+                        titled_parts.append('Wi-Fi')
+                        prev_part = part
+                        prior_abbreviation = None  # Reset for non-abbreviation
+                        continue
+                    for special_word in self.SPECIAL_CASE_WORDS:
+                        if word_lower == special_word.lower():
+                            titled_parts.append(special_word)
+                            prev_part = part
+                            continue
+
+                    # Handle common unit patterns (GB, MHz, etc.)
+                    found_unit = False
+                    word_lower = word.lower()
+
+                    # Try unit patterns for:
+                    # 1. Standard units (GB, MHz, Ω, etc.)
+                    # 2. Dates with month abbreviations (2025jan12, jan2025)
+                    # 3. Units after a slash (30km/hr)
+                    # This must come before abbreviation check to handle concatenated formats
+                    if (re.match(r'^\d+[kmgtw]?[wvajnlhzbfω][h]?', word_lower) or  # Standard units (including compound like wh)
+                        re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or      # Date formats
+                        word_lower in self.STANDALONE_UNITS or                # Standalone units
+                        word_lower.isdigit()):                               # Standalone digits for space-separated units
+                        self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
+                        self.debug_print(f"  Context: parts[{i}] in {parts[max(0,i-1):min(len(parts),i+3)]!r}")
+
+                        # Initialize unit tracking
+                        unit_end_index = i  # Index of the last part of this unit (initially just the current part)
+                        unit_parts = [part]  # Track all parts of the unit
+                        test_word = word_lower
+                        original_parts = [part]
+
+                        # Check for space-separated units (e.g. "5 kb" or "5 g")
+                        if parts[i].strip().isdigit() and i + 2 < len(parts) and parts[i+1].strip() == ' ':
+                            self.debug_print(f"  Checking for space-separated unit at index {i}: {parts[i:i+3]!r}")
+                            # Check if the part after the space is a valid unit
+                            next_part = parts[i+2].strip().lower()
+                            if re.match(r'^[kmgtw]?[wvajnlhzbfg]', next_part) or next_part in self.STANDALONE_UNITS:
+                                # Include space and unit part
+                                unit_parts.extend([parts[i+1], parts[i+2]])
+                                original_parts.extend([parts[i+1], parts[i+2]])
+                                test_word = word_lower + next_part
+                                unit_end_index = i + 2  # Update to include the space and unit part
+                                self.debug_print(f"  Found space-separated unit: {unit_parts!r}")
+
+                        self.debug_print(f"  Testing unit pattern: {test_word!r}  Original parts: {original_parts!r}")
+
+                        # Try to match unit patterns
+                        for pattern, formatter in sorted(self.UNIT_PATTERNS.items(), key=lambda x: len(x[0]), reverse=True):
+                            match = re.match(f'^{pattern}$', test_word, re.IGNORECASE)
+                            if match:  # Case-insensitive exact match
+                                # For bits/bytes and bps units, enforce prefix case but preserve b/B
+                                if re.search(r'\d+[kmgt]?b(?:ps)?\b', test_word, re.IGNORECASE):
+                                    # Find the unit part (kb, MB, bps, Bps etc)
+                                    unit_match = re.search(r'[kmgt]?b(?:ps)?\b', test_word, re.IGNORECASE)
+                                    if unit_match:
+                                        # Get original case for just the b/B part
+                                        orig_b_case = None
+                                        for p in original_parts:
+                                            if unit_match.group().lower() in p.lower():
+                                                # Match the b/B and optional ps
+                                                b_pattern = r'[bB](?:[pP][sS])?\b'
+                                                b_search = re.search(b_pattern, p)
+                                                if b_search:
+                                                    orig_b_case = b_search.group()
+                                                    break
+
+                                        if orig_b_case:
+                                            # Extract the prefix and number
+                                            prefix_match = re.match(r'(\d+)([kmgt])?', test_word, re.IGNORECASE)
+                                            if prefix_match:
+                                                number = prefix_match.group(1)
+                                                prefix = prefix_match.group(2)
+
+                                                # Apply prefix case rules
+                                                if prefix:
+                                                    if prefix.lower() == 'k':
+                                                        prefix = 'k'  # Always lowercase
+                                                    else:
+                                                        prefix = prefix.upper()  # M, G, T always uppercase
+
+                                                # Combine with preserved b/B case
+                                                formatted = f"{number}{prefix or ''}{orig_b_case}"
+                                                self.debug_print(f"    Applied case rules: {test_word!r} -> {formatted!r}")
+                                        else:
+                                            formatted = formatter(test_word)
+                                else:
+                                    # Apply normal unit formatting
+                                    formatted = formatter(test_word)
+
+                                unit_debug = f"✓ Unit: {formatted!r} (from={original_parts!r}, pattern={pattern!r})"
+                                self.debug_print(f"    Applied formatter: {test_word!r} -> {formatted!r}")
+
+                                # Mark all parts that make up this unit as processed
+                                unit_start_index = i  # Start index of the unit (current part)
+                                self.debug_print(f"  Marking parts from unit_start_index={unit_start_index} to unit_end_index={unit_end_index} as processed")
+                                for idx in range(unit_start_index, unit_end_index+1):
+                                    processed_parts[idx] = f"part of {unit_debug}"
+
+                                # Add the formatted unit preserving any spaces
+                                # Replace the matched content with formatted version
+                                parts_with_spaces = []
+                                for p in original_parts:
+                                    if p.strip().lower() == test_word.lower():
+                                        parts_with_spaces.append(formatted)
+                                    else:
+                                        parts_with_spaces.append(p)
+
+                                formatted_with_spaces = ''.join(parts_with_spaces)
+                                titled_parts.append(formatted_with_spaces)
+                                prev_part = formatted  # Store just the unit as prev_part
+
+                                self.debug_print(f"  {unit_debug}")
+                                found_unit = True
+                                # Don't modify loop counter directly, we'll use processed_parts to skip
+                                # already processed parts in the next iterations
+                                self.debug_print(f"  Found unit at index {i}, marked parts {i} to {unit_end_index} as processed")
+                                self.debug_print(f"  Next parts to process: {parts[unit_end_index+1:]!r}" if unit_end_index+1 < len(parts) else "  No more parts to process")
+                                self.debug_print(f"  titled_parts after unit found: {titled_parts!r}")
+                                # Important: Continue with the main loop after processing this unit
+                                # This only breaks out of the inner loop that was checking for unit patterns
+                                break
+
+                        if not found_unit:
+                            # Only try number-word if no unit pattern matched
+                            if re.match(r'^\d+[a-z]+$', word_lower):
+                                self.debug_print(f"  Found number-word: {word!r}")
+                                # Find where the numbers end and letters begin
+                                match = re.match(r'^(\d+)([a-z]+)$', word_lower)
+                                if match:
+                                    numbers, letters = match.groups()
+                                    word = numbers + letters[0].upper() + letters[1:]
+                                    titled_parts.append(word)
+                                    prev_part = word
+                                    processed_parts[i] = f"number-word: {word!r}"
+                                    continue
+                            self.debug_print(f"  No unit pattern match found")
+
+                    # Skip this part if it's already been processed as part of a unit
+                    # This replaces the previous 'if found_unit: continue' approach
+                    # try:
                     if processed_parts[i] and processed_parts[i].startswith('part of'):
                         self.debug_print(f"  Skipping already processed part: {parts[i]!r} at index {i}")
                         continue
-                # except Exception as e:
-                    # self.debug_print(f"  ERROR checking processed_parts[{i}]: {e}")
+                    # except Exception as e:
+                        # self.debug_print(f"  ERROR checking processed_parts[{i}]: {e}")
 
-                try:
-                    if found_unit:
-                        self.debug_print(f"  After unit processing: titled_parts={titled_parts!r}")
-                        self.debug_print(f"  Remaining parts to process: {parts[i+1:]!r}")
-                    else:
-                        self.debug_print(f"  No unit found, continuing with normal word processing for {word!r}")
-                except Exception as e:
-                    self.debug_print(f"  ERROR in found_unit check: {e}")
-
-                # Handle abbreviations - check if this word is an abbreviation
-                # If the previous word was also an abbreviation, we'll handle this
-                # one separately rather than trying to join them
-                #
-                # FUTURE ENHANCEMENT: Support user-provided file for custom abbreviations that overrules
-                # the default processing. This would allow users to specify their own abbreviation handling
-                # after all the standard abbreviation and unit processing is done. # Suggestion: instead of putting 'ON' in the file as initials,
-                # overruling the common word, users could specify 'Mr.ON' or 'Ms.ON' in
-                # their custom file to ensure it's treated as a proper noun.
-                test_word = word.upper()
-                j = i
-
-                # Check if this word matches an abbreviation
-                found_abbrev = None
-                abbrev_debug = ""
-
-                self.debug_print(f"  Abbrev check: {test_word!r} (end={j >= len(parts) - 1})")
-
-                # Try exact match first (case-insensitive)
-                for abbr in self.ABBREVIATIONS:
-                    if test_word.upper() == abbr.upper():
-                        found_abbrev = abbr  # Use case from ABBREVIATIONS
-                        abbrev_debug = f"✓ {found_abbrev!r} (exact)"
-                        break
-                else:
-                    # Try without periods
-                    clean_word = self._clean_abbreviation(test_word)
-                    for abbr in self.ABBREVIATIONS:
-                        if clean_word.upper() == abbr.upper():
-                            found_abbrev = abbr
-                            abbrev_debug = f"✓ {found_abbrev!r} (no periods)"
-                            break
-
-                # Check if it's in our special dictionary of words that should only be kept capitalized if all caps
-                # Only run this if we haven't already found an abbreviation through other methods
-                if not found_abbrev:
-                    abbrev_upper = word.upper()
-                    if abbrev_upper in self.KEEP_CAPITALIZED_IF_ALLCAPS:
-                        # For special abbreviations, keep capitalized only if original was all caps
-                        if part.isupper():
-                            # Original was all caps, treat as abbreviation
-                            found_abbrev = abbrev_upper
-                            abbrev_debug = f"✓ {found_abbrev!r} (special case - kept uppercase)"
+                    try:
+                        if found_unit:
+                            self.debug_print(f"  After unit processing: titled_parts={titled_parts!r}")
+                            self.debug_print(f"  Remaining parts to process: {parts[i+1:]!r}")
                         else:
-                            # Original wasn't all caps, don't treat as abbreviation
-                            # Let it fall through to normal capitalization rules
-                            self.debug_print(f"  Not treating {word!r} as abbreviation (not all caps)")
+                            self.debug_print(f"  No unit found, continuing with normal word processing for {word!r}")
+                    except Exception as e:
+                        self.debug_print(f"  ERROR in found_unit check: {e}")
 
-                # As much as would like to handle initials (FDR, JFK), can't distinguish from all-uppercase common words (THE, FOX, BUT)
+                    # Handle abbreviations - check if this word is an abbreviation
+                    # If the previous word was also an abbreviation, we'll handle this
+                    # one separately rather than trying to join them
+                    #
+                    # FUTURE ENHANCEMENT: Support user-provided file for custom abbreviations that overrules
+                    # the default processing. This would allow users to specify their own abbreviation handling
+                    # after all the standard abbreviation and unit processing is done. # Suggestion: instead of putting 'ON' in the file as initials,
+                    # overruling the common word, users could specify 'Mr.ON' or 'Ms.ON' in
+                    # their custom file to ensure it's treated as a proper noun.
+                    test_word = word.upper()
+                    j = i
 
-                # If at end of text and no match, try with trailing period
-                if not found_abbrev and j >= len(parts) - 1:
-                    test_word_period = test_word + '.'
-                    if test_word_period in self.ABBREVIATIONS:
-                        found_abbrev = test_word_period
-                        abbrev_debug = f"✓ {found_abbrev!r} (with period)"
+                    # Check if this word matches an abbreviation
+                    found_abbrev = None
+                    abbrev_debug = ""
 
-                if found_abbrev:
-                    # Found an abbreviation
-                    processed_parts[i] = abbrev_debug
-                    self.debug_print(abbrev_debug)
+                    self.debug_print(f"  Abbrev check: {test_word!r} (end={j >= len(parts) - 1})")
 
-                    if '.' in found_abbrev:
-                        # Split into parts to preserve periods
-                        parts_to_add = re.split(r'([.])', found_abbrev)
-                        titled_parts.extend(parts_to_add)
-                        prev_part = found_abbrev  # Keep the full abbreviation as previous part
-                        prev_was_abbrev = True  # Mark that we found a valid abbreviation
+                    # Try exact match first (case-insensitive)
+                    for abbr in self.ABBREVIATIONS:
+                        if test_word.upper() == abbr.upper():
+                            found_abbrev = abbr  # Use case from ABBREVIATIONS
+                            abbrev_debug = f"✓ {found_abbrev!r} (exact)"
+                            break
                     else:
-                        # Check if we're in a date pattern (number.month)
-                        self.debug_print(f"  checking for date pattern: {titled_parts}, Found Abbrev: {found_abbrev}, PrevPart: {prev_part}, PriorDatePart:{prior_date_part} ")
-                        if (titled_parts and
-                            prev_part == '.' and
-                            len(titled_parts) >= 2 and
-                            titled_parts[-2].isdigit() and
-                            found_abbrev.upper() in self.MONTH_FORMATS):
-                            prior_date_part = True
-                            self.debug_print(f"  Found date pattern: {titled_parts[-2]}.{found_abbrev}")
+                        # Try without periods
+                        clean_word = self._clean_abbreviation(test_word)
+                        for abbr in self.ABBREVIATIONS:
+                            if clean_word.upper() == abbr.upper():
+                                found_abbrev = abbr
+                                abbrev_debug = f"✓ {found_abbrev!r} (no periods)"
+                                break
 
-                        titled_parts.append(found_abbrev)
-                        prev_part = found_abbrev  # Keep the full abbreviation as previous part
-                        prev_was_abbrev = True  # Mark that we found a valid abbreviation
-                    continue
+                    # Check if it's in our special dictionary of words that should only be kept capitalized if all caps
+                    # Only run this if we haven't already found an abbreviation through other methods
+                    if not found_abbrev:
+                        abbrev_upper = word.upper()
+                        if abbrev_upper in self.KEEP_CAPITALIZED_IF_ALLCAPS:
+                            # For special abbreviations, keep capitalized only if original was all caps
+                            if part.isupper():
+                                # Original was all caps, treat as abbreviation
+                                found_abbrev = abbrev_upper
+                                abbrev_debug = f"✓ {found_abbrev!r} (special case - kept uppercase)"
+                            else:
+                                # Original wasn't all caps, don't treat as abbreviation
+                                # Let it fall through to normal capitalization rules
+                                self.debug_print(f"  Not treating {word!r} as abbreviation (not all caps)")
 
-                # Not an abbreviation, let it fall through to normal word handling
-                self.debug_print("  No abbreviation match found")
+                    # As much as would like to handle initials (FDR, JFK), can't distinguish from all-uppercase common words (THE, FOX, BUT)
 
-                # Check if we're between spaces or after punctuation
-                # Word should be lowercase if:
-                # 1. It's in our lowercase word list AND
-                # 2. It's not the first word AND
-                # 3. It's not after a period/ellipsis AND
-                # 4. It's not the last word
-                # 5. It's between spaces (not after special chars)
+                    # If at end of text and no match, try with trailing period
+                    if not found_abbrev and j >= len(parts) - 1:
+                        test_word_period = test_word + '.'
+                        if test_word_period in self.ABBREVIATIONS:
+                            found_abbrev = test_word_period
+                            abbrev_debug = f"✓ {found_abbrev!r} (with period)"
 
-                is_between_spaces = prev_part == ' '
+                    if found_abbrev:
+                        # Found an abbreviation
+                        processed_parts[i] = abbrev_debug
+                        self.debug_print(abbrev_debug)
 
-                # Find the last non-space part for checking capitalization triggers
-                last_non_space = next((p for p in reversed(titled_parts) if p.strip()), '') if titled_parts else ''
+                        if '.' in found_abbrev:
+                            # Split into parts to preserve periods
+                            parts_to_add = re.split(r'([.])', found_abbrev)
+                            titled_parts.extend(parts_to_add)
+                            prev_part = found_abbrev  # Keep the full abbreviation as previous part
+                            prev_was_abbrev = True  # Mark that we found a valid abbreviation
+                        else:
+                            # Check if we're in a date pattern (number.month)
+                            self.debug_print(f"  checking for date pattern: {titled_parts}, Found Abbrev: {found_abbrev}, PrevPart: {prev_part}, PriorDatePart:{prior_date_part} ")
+                            if (titled_parts and
+                                prev_part == '.' and
+                                len(titled_parts) >= 2 and
+                                titled_parts[-2].isdigit() and
+                                found_abbrev.upper() in self.MONTH_FORMATS):
+                                prior_date_part = True
+                                self.debug_print(f"  Found date pattern: {titled_parts[-2]}.{found_abbrev}")
 
-                # Always capitalize after certain punctuation or if it's the first/last word
-                self.debug_print(f"  Title case check: first={not titled_parts}, last={word == last_real_word}, after_trigger={last_non_space in self.CAPITALIZATION_TRIGGERS}")
-                should_capitalize = (
-                    not titled_parts or  # First word
-                    last_non_space in self.CAPITALIZATION_TRIGGERS or  # After trigger characters
-                    word == last_real_word  # Last word
-                )
-                # First check if we should force capitalize
-                reason = ('First word' if not titled_parts else
-                         'Last word' if word == last_real_word else
-                         'After punctuation' if last_non_space in self.CAPITALIZATION_TRIGGERS else
-                         'Between special chars' if not is_between_spaces else
-                         'Unknown')
+                            titled_parts.append(found_abbrev)
+                            prev_part = found_abbrev  # Keep the full abbreviation as previous part
+                            prev_was_abbrev = True  # Mark that we found a valid abbreviation
+                        continue
 
-                # Then check if we should force lowercase
-                should_lowercase = (word in self.LOWERCASE_WORDS and
-                                  titled_parts and  # Not first word
-                                  not should_capitalize and  # Not after period/ellipsis
-                                  word != last_real_word and  # Not the last word
-                                  is_between_spaces)  # Between spaces, not after special char
+                    # Not an abbreviation, let it fall through to normal word handling
+                    self.debug_print("  No abbreviation match found")
 
-                case_reason = f"capitalize ({reason})" if should_capitalize else \
-                             f"lowercase (in list)" if should_lowercase else \
-                             f"capitalize (not in lowercase list)"
-                self.debug_print(f"  Case: {case_reason}")
-                if (word in self.LOWERCASE_WORDS and
-                    titled_parts and      # Not first word
-                    not should_capitalize and  # Not after period/ellipsis
-                    word != last_real_word and  # Not the last word
-                    is_between_spaces):   # Between spaces, not after special char
+                    # Check if we're between spaces or after punctuation
+                    # Word should be lowercase if:
+                    # 1. It's in our lowercase word list AND
+                    # 2. It's not the first word AND
+                    # 3. It's not after a period/ellipsis AND
+                    # 4. It's not the last word
+                    # 5. It's between spaces (not after special chars)
 
-                    self.debug_print(f"  Adding to titled_parts: {word!r} (lowercase)")
-                    processed_word = word
-                    titled_parts.append(processed_word)
+                    is_between_spaces = prev_part == ' '
+
+                    # Find the last non-space part for checking capitalization triggers
+                    last_non_space = next((p for p in reversed(titled_parts) if p.strip()), '') if titled_parts else ''
+
+                    # Always capitalize after certain punctuation or if it's the first/last word
+                    self.debug_print(f"  Title case check: first={not titled_parts}, last={word == last_real_word}, after_trigger={last_non_space in self.CAPITALIZATION_TRIGGERS}")
+                    should_capitalize = (
+                        not titled_parts or  # First word
+                        last_non_space in self.CAPITALIZATION_TRIGGERS or  # After trigger characters
+                        word == last_real_word  # Last word
+                    )
+                    # First check if we should force capitalize
+                    reason = ('First word' if not titled_parts else
+                             'Last word' if word == last_real_word else
+                             'After punctuation' if last_non_space in self.CAPITALIZATION_TRIGGERS else
+                             'Between special chars' if not is_between_spaces else
+                             'Unknown')
+
+                    # Then check if we should force lowercase
+                    should_lowercase = (word in self.LOWERCASE_WORDS and
+                                      titled_parts and  # Not first word
+                                      not should_capitalize and  # Not after period/ellipsis
+                                      word != last_real_word and  # Not the last word
+                                      is_between_spaces)  # Between spaces, not after special char
+
+                    case_reason = f"capitalize ({reason})" if should_capitalize else \
+                                 f"lowercase (in list)" if should_lowercase else \
+                                 f"capitalize (not in lowercase list)"
+                    self.debug_print(f"  Case: {case_reason}")
+                    if (word in self.LOWERCASE_WORDS and
+                        titled_parts and      # Not first word
+                        not should_capitalize and  # Not after period/ellipsis
+                        word != last_real_word and  # Not the last word
+                        is_between_spaces):   # Between spaces, not after special char
+
+                        self.debug_print(f"  Adding to titled_parts: {word!r} (lowercase)")
+                        processed_word = word
+                        titled_parts.append(processed_word)
+                    else:
+                        processed_word = word.capitalize()
+                        self.debug_print(f"  Adding to titled_parts: {processed_word!r} (capitalized)")
+                        titled_parts.append(processed_word)
+                    prev_part = processed_word  # Store the processed version, not the original
+                    prior_abbreviation = None  # Reset for non-abbreviation word
+            except Exception as e:
+                import traceback
+                self.debug_print(f"\nEXCEPTION in processing parts: {type(e).__name__}: {e}", level='normal')
+                part_str = repr(part) if 'part' in locals() else 'unknown'
+                self.debug_print(f"Current part index = {i if 'i' in locals() else 'unknown'}, part = {part_str}", level='normal')
+                self.debug_print(f"parts = {parts!r}", level='normal')
+                # Check if titled_parts exists before trying to use it
+                if 'titled_parts' in locals() and titled_parts:
+                    self.debug_print(f"titled_parts = {titled_parts!r}", level='normal')
                 else:
-                    processed_word = word.capitalize()
-                    self.debug_print(f"  Adding to titled_parts: {processed_word!r} (capitalized)")
-                    titled_parts.append(processed_word)
-                prev_part = processed_word  # Store the processed version, not the original
-                prior_abbreviation = None  # Reset for non-abbreviation word
+                    self.debug_print("titled_parts is not defined or empty", level='normal')
+                    # Initialize titled_parts if it doesn't exist
+                    titled_parts = []
+                self.debug_print("\nDetailed traceback:", level='normal')
+                self.debug_print(traceback.format_exc(), level='normal')
+                # Use the original name as a fallback
+                titled_parts = [name]
 
-            # Restore Preserved Terms that were replaced with markers
+        # Restore Preserved Terms that were replaced with markers
+        try:
+            # Ensure titled_parts is defined before using it
+            if not 'titled_parts' in locals() or titled_parts is None:
+                self.debug_print("titled_parts was not defined before restore attempt, initializing to [name]", level='normal')
+                titled_parts = [name]
+                
+            self.debug_print(f"titled_parts before restore = {titled_parts!r}", level='normal')
             titled_parts = self._restore_preserved_terms(titled_parts)
             self.debug_print(f"[RESTORE] titled_parts after restoring preserved terms: {titled_parts!r}", level='normal')
+        except Exception as e:
+            import traceback
+            self.debug_print(f"\nEXCEPTION in _restore_preserved_terms: {type(e).__name__}: {e}", level='normal')
+            # Check if titled_parts exists before trying to use it
+            if 'titled_parts' in locals() and titled_parts is not None:
+                self.debug_print(f"titled_parts before restore = {titled_parts!r}", level='normal')
+            else:
+                self.debug_print("titled_parts was not defined or is None", level='normal')
+                # Initialize titled_parts if it doesn't exist
+                titled_parts = [name]
+            self.debug_print("\nDetailed traceback:", level='normal')
+            self.debug_print(traceback.format_exc(), level='normal')
+            # Continue with the unmodified titled_parts as a fallback
 
-            # Handle periods in preserved terms by replacing with a placeholder
-            PRESERVED_PERIOD_PLACEHOLDER = '__PRESERVED_TERM_PERIOD__'
-            preserved_terms_with_periods = [term for term in self.PRESERVED_TERMS if '.' in term]
+        # Handle periods in preserved terms by replacing with a placeholder
+        PRESERVED_PERIOD_PLACEHOLDER = '__PRESERVED_TERM_PERIOD__'
+        preserved_terms_with_periods = [term for term in self.PRESERVED_TERMS if '.' in term]
 
-            for term in preserved_terms_with_periods:
-                # Create a version of the term with the placeholder instead of periods
-                term_with_placeholder = term.replace('.', PRESERVED_PERIOD_PLACEHOLDER)
+        for term in preserved_terms_with_periods:
+            # Create a version of the term with the placeholder instead of periods
+            term_with_placeholder = term.replace('.', PRESERVED_PERIOD_PLACEHOLDER)
 
-                # Replace the term in the parts list
-                for i, part in enumerate(titled_parts):
-                    # self.debug_print(f"[PRESERVED_PERIODS] Checking part vs term: {part!r} == {term!r} -> {part == term}", level='normal')
-                    if part == term:
-                        titled_parts[i] = term_with_placeholder
+            # Replace the term in the parts list
+            for i, part in enumerate(titled_parts):
+                # self.debug_print(f"[PRESERVED_PERIODS] Checking part vs term: {part!r} == {term!r} -> {part == term}", level='normal')
+                if part == term:
+                    titled_parts[i] = term_with_placeholder
 
-            # Process periods in each part individually (excluding Preserved Terms)
-            processed_parts = []
+        # Process periods in each part individually (excluding Preserved Terms)
+        processed_parts = []
+        try:
             for part in titled_parts:
                 # Skip empty parts
                 if not part:
@@ -2068,16 +2116,39 @@ class FileRenamer:
                     self.debug_print(f"[PERIODS] After restoring period placeholders in part: {processed_part!r}", level='normal')
 
                 processed_parts.append(processed_part)
+        except Exception as e:
+                import traceback
+                self.debug_print(f"\nEXCEPTION in processing periods: {type(e).__name__}: {e}", level='normal')
+                self.debug_print(f"Current part = {part!r}", level='normal')
+                self.debug_print(f"titled_parts = {titled_parts!r}", level='normal')
+                self.debug_print("\nDetailed traceback:", level='normal')
+                self.debug_print(traceback.format_exc(), level='normal')
+                # Add the unprocessed parts to processed_parts as a fallback
+                processed_parts = titled_parts
 
-            # Join the processed parts
-            name = ''.join(processed_parts)
-            self.debug_print(f"[PERIODS] After joining processed parts: {name!r}", level='normal')
+        # Join the processed parts with error trapping
+        try:
+            if not processed_parts:
+                self.debug_print(f"WARNING: processed_parts is empty, this may indicate a processing error", level='normal')
+                # Return the original name as a fallback
+                name = name
+            else:
+                name = ''.join(processed_parts)
+                self.debug_print(f"[PERIODS] After joining processed parts: {name!r}", level='normal')
 
-            # Clean up any double spaces
-            name = re.sub(r'\s+', ' ', name)
+                # Clean up any double spaces
+                name = re.sub(r'\s+', ' ', name)
 
-            # Do one final check for trailing special characters
-            name = self._clean_trailing_chars(name)
+                # Do one final check for trailing special characters
+                name = self._clean_trailing_chars(name)
+        except Exception as e:
+            import traceback
+            self.debug_print(f"\nEXCEPTION in joining processed parts: {type(e).__name__}: {e}", level='normal')
+            self.debug_print(f"processed_parts = {processed_parts!r}", level='normal')
+            self.debug_print("\nDetailed traceback:", level='normal')
+            self.debug_print(traceback.format_exc(), level='normal')
+            # Return the original name as a fallback
+            name = name
 
         # If original had no spaces, remove all spaces from the result
         if ' ' not in filename:
