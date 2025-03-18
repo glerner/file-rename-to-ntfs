@@ -648,6 +648,7 @@ class TestFileRenamer(unittest.TestCase):
         """
         R = FileRenamer.CHAR_REPLACEMENTS
         quote = R['"']
+        ampersand = R['&']
 
         print("\n=== Testing All Abbreviation Cases ===")
         test_cases = [
@@ -661,10 +662,10 @@ class TestFileRenamer(unittest.TestCase):
             ("MSNBC O'Donnell vs O'Reilly.mp4", "MSNBC O'Donnell vs O'Reilly.mp4"),
 
             # hyphenated abbreviations, and exact case and punctuation e.g. company names
-            ("X-ray of TV-MA and PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble Toys\"R\"Us mrna.txt", f"X-Ray of TV-MA and PG-13 and J.Hud, AT&T Coca-Cola, Inc. Barnes&Noble Toys{quote}R{quote}Us mRNA.txt"),
+            ("X-ray of TV-MA & PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble Toys\"R\"Us mrna.txt", f"X-Ray of TV-MA and PG-13 and J.Hud, AT{ampersand}T Coca-Cola, Inc. Barnes{ampersand}Noble Toys{quote}R{quote}Us mRNA.txt"),
             ("LiveDesign Biologics structure of key proteins hERG, programs targeting EGFRC797S, PRMT5-MTA and NLRP3.txt", "LiveDesign Biologics Structure of Key Proteins hERG, Programs Targeting EGFRC797S, PRMT5-MTA and NLRP3.txt"),
 
-            # TV networks (b`ut not the word 'fox')
+            # TV networks (but not the word 'fox')
             ("hbo special on bbc news.mp4", "HBO Special on BBC News.mp4"),
             ("cnn vs fox debate.mp4", "CNN vs Fox Debate.mp4"),
 
@@ -732,6 +733,8 @@ class TestFileRenamer(unittest.TestCase):
             # First part 'Wi-Fi' is an abbreviation
             # ✓ Combined: 'Wi-Fi'.'PDF' → 'Wi-FiPDF'
             # Result: '100Hz Tone 2.4GHz Wi-FiPDF'
+
+            ("iPad iphone ipod mysql typescript wordpress itunes imac macos ios.pdf", "iPad iPhone iPod MySQL TypeScript WordPress iTunes iMac macOS iOS.pdf"),
 
         ]
 

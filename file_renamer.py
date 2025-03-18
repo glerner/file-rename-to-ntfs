@@ -149,7 +149,13 @@ class FileRenamer:
         '{{': '⦃',  # Left White Curly Bracket
         '}}': '⦄',  # Right White Curly Bracket
         '|': '│',   # Box Drawings Light Vertical
-        '&': ' and ', # Replace ampersand with 'and'
+        # Ampersand replacements - all to Full-Width Ampersand
+        '&': '＆',   # ASCII ampersand replaced with Full-Width Ampersand
+        # Additional ampersand-like characters
+        '⅋': '＆',  # Turned Ampersand replaced with Full-Width Ampersand
+        '⁐': '＆',  # Close Up replaced with Full-Width Ampersand
+        '﹠': '＆',  # Small Ampersand replaced with Full-Width Ampersand
+        '﹢': '＆',  # Small And replaced with Full-Width Ampersand
         '$': '＄',  # Full Width Dollar Sign
         '!': '!',   # Keep exclamation mark but collapse multiples
         '...': '…',  # Replace three or more periods with ellipsis character
@@ -820,7 +826,7 @@ class FileRenamer:
         '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
 
         # Medical/Scientific
-        'DNA', 'RNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
+        'DNA', 'RNA', 'mRNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
         'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER', 'ISS', 'STS',
 
         # Business/Organizations
@@ -834,7 +840,11 @@ class FileRenamer:
         'DIY', 'FAQ', 'ASAP', 'IMAX', 'AGT', 'BGT',
 
         # Software/Platforms
-        'WordPress', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'SEO',
+        'WordPress', 'SEO', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'NoSQL', 'PostgreSQL', 'JavaScript', 'TypeScript',
+
+        # Apple products and special case words (merged from SPECIAL_CASE_WORDS)
+        'iPad', 'iPhone', 'iPod', 'iTunes', 'iMac',
+        'macOS', 'iOS',  # Operating systems
     }
 
     # Month names and abbreviations with proper capitalization
@@ -873,15 +883,6 @@ class FileRenamer:
         'ene': 'Ene', 'abr': 'Abr', 'ago': 'Ago', 'dic': 'Dic'
     }
 
-
-    # Words with specific capitalization (not uppercase, not regular title case)
-    SPECIAL_CASE_WORDS = {
-        'iPad', 'iPhone', 'iPod', 'iTunes', 'iMac',  # Apple products
-        'macOS', 'iOS',  # Operating systems
-        'MySQL', 'NoSQL', 'PostgreSQL',  # Databases
-        'JavaScript', 'TypeScript', 'WordPress',  # Software,
-        'Wi-Fi'
-    }
 
     # Common units in filenames that need specific capitalization
     R = CHAR_REPLACEMENTS  # Shorthand for readability
@@ -1039,7 +1040,7 @@ class FileRenamer:
         'part', 'vol', 'feat', 'ft', 'remix',
 
         # Be Verbs (when not first/last)
-        'am', 'are', 'is', 'was', 'were', 'be', 'been', 'being',
+        'am', 'are', 'is', 'was', 'were', 'be', 'been',
 
         # Spanish
         'a', 'con', 'de', 'del', 'el', 'la', 'las', 'lo', 'los',
@@ -1719,18 +1720,13 @@ class FileRenamer:
                         prev_part = part
                         continue
 
-                    # Check for special case words (Wi-Fi, etc.)
+                    # Check for frequent mis-typed words (Wi-Fi, etc.)
                     word_lower = word.lower()
                     if word_lower == 'wifi':  # Convert all variants to Wi-Fi
                         titled_parts.append('Wi-Fi')
                         prev_part = part
                         prior_abbreviation = None  # Reset for non-abbreviation
                         continue
-                    for special_word in self.SPECIAL_CASE_WORDS:
-                        if word_lower == special_word.lower():
-                            titled_parts.append(special_word)
-                            prev_part = part
-                            continue
 
                     # Handle common unit patterns (GB, MHz, etc.)
                     found_unit = False
@@ -2036,13 +2032,20 @@ class FileRenamer:
                 # Use the original name as a fallback
                 titled_parts = [name]
 
+        # Convert any remaining full-width ampersands to ' and ' for better readability
+        # This happens before restoring preserved terms so that special terms keep their ampersands
+        for i, part in enumerate(titled_parts):
+            if '\uff06' in part:  # Full-width ampersand
+                titled_parts[i] = part.replace('\uff06', ' and ')
+                self.debug_print(f"Converted full-width ampersand to ' and ' in part: {titled_parts[i]!r}", level='normal')
+        
         # Restore Preserved Terms that were replaced with markers
         try:
             # Ensure titled_parts is defined before using it
             if not 'titled_parts' in locals() or titled_parts is None:
                 self.debug_print("titled_parts was not defined before restore attempt, initializing to [name]", level='normal')
                 titled_parts = [name]
-                
+
             self.debug_print(f"titled_parts before restore = {titled_parts!r}", level='normal')
             titled_parts = self._restore_preserved_terms(titled_parts)
             self.debug_print(f"[RESTORE] titled_parts after restoring preserved terms: {titled_parts!r}", level='normal')
