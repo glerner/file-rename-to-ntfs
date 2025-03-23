@@ -47,13 +47,14 @@ Run in your Terminal. There is no graphical user interface.
 
 Basic usage:
 ```bash
-python file_renamer.py [directory] [--dry-run] [--debug]
+python file_renamer.py [directory] [--dry-run] [--debug] [--settings SETTINGS_FILE]
 ```
 
 Arguments:
 - `directory`: Optional. Directory containing files to rename. Defaults to current directory.
 - `--dry-run`: Optional. Show what would be renamed without making changes.
 - `--debug`: Optional. Enable detailed debug output showing each step of the renaming process.
+- `--settings`: Optional. Path to custom settings file. Defaults to settings.ini.
 
 Examples:
 ```bash
@@ -68,7 +69,77 @@ python file_renamer.py --dry-run --debug
 
 # Rename files in specific directory with debug output
 python file_renamer.py ~/my_files --debug
+
+# Use a custom settings file
+python file_renamer.py --settings ~/my_custom_settings.txt
 ```
+
+## User Settings
+
+File Renamer supports customization through a settings file that allows you to define your own abbreviations and preserved terms.
+
+### Settings File Location
+
+The program looks for settings in the following locations (in order):
+1. Path specified with `--settings` command-line option
+2. `./settings.ini` (in the current directory)
+3. `~/.config/file_renamer/settings.ini` (in your home directory)
+
+### Format
+
+The settings file uses a simple format with section headers in brackets and one entry per line:
+
+```
+[abbreviations]
+AI
+ML
+
+[preserved_terms]
+My Product Name
+```
+
+### Sections
+
+1. **[abbreviations]** - Terms that should maintain their exact capitalization
+   - Example: "AI" will always remain "AI" instead of being converted to "Ai"
+   - These are recognized as complete words during filename processing
+
+2. **[preserved_terms]** - Phrases that should be preserved exactly as written
+   - Example: "Star Trek: The Next Generation" will remain unchanged
+   - These can include special characters, spaces, and punctuation
+   - The renamer will keep these terms exactly as defined
+
+### Rules and Limitations
+
+- Maximum entry length: 255 UTF-16 characters (NTFS filename limit)
+- Special characters are allowed and will be handled by the renamer
+- Control characters (non-printable) are not allowed
+- User-defined terms take precedence over built-in terms
+- Invalid entries will be skipped with a warning message
+
+### Example
+
+```
+# My custom settings
+
+[abbreviations]
+AI
+ML
+MyCompany
+AWS
+
+[preserved_terms]
+My Product Name
+Company-Specific™ Term
+Star Trek: The Next Generation
+```
+
+### Creating Your First Settings File
+
+1. Modify the existing text file named `settings.ini` in the same directory as the script (or create new one)
+2. Add section headers `[abbreviations]` and `[preserved_terms]`
+3. Add your custom terms under each section
+4. Save the file and run File Renamer normally
 
 ## Debug Mode
 

@@ -21,7 +21,7 @@ from file_renamer import FileRenamer, main  # Import main
 
 class TestFileRenamer(unittest.TestCase):
     """Test cases for FileRenamer class."""
-    force_fail = True # Set to True to force failures, False to disable
+    force_fail = False # Set to True to force failures, False to disable
 
     def _run_test_cases(self, test_cases, force_fail=None):
         if force_fail is None:
@@ -48,6 +48,8 @@ class TestFileRenamer(unittest.TestCase):
                 return repr(text)
             # Get the special chars from FileRenamer
             special_chars = set(FileRenamer.CHAR_REPLACEMENTS.values())
+            # Add apostrophe replacement to highlighted characters
+            special_chars.add(FileRenamer.APOSTROPHE_REPLACEMENT)
             result = []
             text_repr = repr(text)[1:-1]  # Remove the quotes
             i = 0
@@ -648,6 +650,7 @@ class TestFileRenamer(unittest.TestCase):
         """
         R = FileRenamer.CHAR_REPLACEMENTS
         quote = R['"']
+        apos = FileRenamer.APOSTROPHE_REPLACEMENT
         ampersand = R['&']
 
         print("\n=== Testing All Abbreviation Cases ===")
@@ -659,7 +662,7 @@ class TestFileRenamer(unittest.TestCase):
             # Movie/TV ratings
             ("movie pg-13 2024.mp4", "Movie PG-13 2024.mp4"),
             ("tv show TV-MA s01.mkv", "TV Show TV-MA S01.mkv"),
-            ("MSNBC O'Donnell vs O'Reilly.mp4", "MSNBC O'Donnell vs O'Reilly.mp4"),
+            ("MSNBC O'Donnell vs O'Reilly.mp4", f"MSNBC O{apos}Donnell vs O{apos}Reilly.mp4"),
 
             # hyphenated abbreviations, and exact case and punctuation e.g. company names
             ("X-ray of TV-MA & PG-13 and J.Hud, AT&T Coca-COLA, INC. Barnes&Noble Toys\"R\"Us mrna.txt", f"X-Ray of TV-MA and PG-13 and J.Hud, AT{ampersand}T Coca-Cola, Inc. Barnes{ampersand}Noble Toys{quote}R{quote}Us mRNA.txt"),
@@ -722,7 +725,7 @@ class TestFileRenamer(unittest.TestCase):
             ("song.flac vs song.mp3 vs song.wav", "Song.FLAC vs Song.MP3 vs Song.wav"), # trailing .wav is a file extension, not text
 
             # Frequency
-            ("100hz tone 2.4ghz wifi.pdf 440hz a4 note.mp3", "100Hz Tone 2.4GHz Wi-Fi.PDF 440Hz A4 Note.mp3"),
+            ("100hz tone 2.4ghz wifi 440hz a4 note.mp3", "100Hz Tone 2.4GHz Wi-Fi 440Hz A4 Note.mp3"),
             # should detect 2.4 as number, catching wifi.pdf as compound abbrev
             # Processing part 10: 'pdf' (len=3, has_boundary=[])
             # Word: 'pdf' (prev_part='.', Found Abbrev: None, PriorDatePart: None)

@@ -30,10 +30,11 @@ import re
 import sys
 import errno
 import traceback
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set, Optional
 from pathlib import Path
 import unicodedata
 import logging
+import argparse
 from colorama import init, Fore, Style
 
 # Initialize colorama for cross-platform color support
@@ -169,17 +170,17 @@ class FileRenamer:
     R = CHAR_REPLACEMENTS
 
     # List of terms with specific capitalization and punctuation to preserve exactly
-    # Future Improvement: when have a configuration file for users to define their own preserved terms, make a "direct replace" section e.g. for file names replace "Star Trek: The Next Generation" (with colon and double quotes) with Star Trek Next Generation (no colon or double quotes and removed 'The')
+    # These built-in terms can be supplemented with user-defined terms from settings.ini
     PRESERVED_TERMS = [
         # TV/Movie ratings (okay if some do not need special handling)
         'TV-MA', 'TV-PG', 'TV-Y', 'TV-14', 'PG-13', 'NC-17',
-        # Medical or chemical terms (testing contain word separators like space and hyphen, and keep their original capitalization)
-        'X-Ray', 'mRNA', 'LiveDesign Biologics', 'hERG', 'EGFRC797S', 'PRMT5-MTA', 'NLRP3',
-        # Company names with specific capitalization/punctuation (testing periods and ampersand which have special processing)
-        'AT&T', 'Barnes&Noble', 'Coca-Cola, Inc.', 'Toys"R"Us', 'J.Hud', 'DiaryOfACEO',
         # Movie Title with colon (a character forbidden in NTFS filenames) and double quotes (a character not forbidden in NTFS filenames but we're replacing with Full Width Quotation Mark)
         '"Star Trek: The Next Generation"'
     ]
+
+    # User settings loaded from settings.ini
+    USER_ABBREVIATIONS = set()
+    USER_PRESERVED_TERMS = set()
 
     # All opening bracket characters (ASCII and replacements)
     OPENING_BRACKETS = {
@@ -598,7 +599,7 @@ class FileRenamer:
             List of parts with markers replaced by original preserved terms
         """
         try:
-            self.debug_print(f"\n[RESTORATION] Starting restoration of preserved terms from parts: {parts!r}", level='normal')
+            # self.debug_print(f"\n[RESTORATION] Starting restoration of preserved terms from parts: {parts!r}", level='normal')
 
             if not hasattr(self, '_preserved_term_originals'):  # Dictionary of preserved terms with their original capitalization
                 self.debug_print("[RESTORATION] No preserved terms found", level='normal')
@@ -825,14 +826,10 @@ class FileRenamer:
         # Quality/Standards
         '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
 
-        # Medical/Scientific
-        'DNA', 'RNA', 'mRNA', 'CRISPR', 'CPAP', 'BiPAP', 'HIV', 'AIDS', 'CDC',
-        'MRI', 'CT', 'EKG', 'ECG', 'X-Ray', 'ICU', 'ER', 'ISS', 'STS',
-
         # Business/Organizations
         'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
         'VP',
-        # Note: removed VS to avoid confusion,
+        # Note: removed VS, conflicts with 'vs' versus
         # removed HR (human resources) since conflicts with hr (hour)
 
         # Other Common
@@ -1198,16 +1195,33 @@ class FileRenamer:
         # Replace the original set with the cleaned set
         cls.ABBREVIATIONS = cleaned
 
-    def __init__(self, directory: str = '.', dry_run: bool = False):
+    def __init__(self, directory: str = '.', dry_run: bool = False, settings_path: Optional[str] = None):
         """
         Initialize the FileRenamer.
 
         Args:
             directory (str): Directory to process files in
             dry_run (bool): If True, only show what would be renamed without making changes
+            settings_path (str, optional): Path to settings file
         """
         # Validate and clean abbreviations first
         self._validate_abbreviations()
+
+        # Load user settings
+        self.user_abbreviations, self.user_preserved_terms = self.load_user_settings(settings_path)
+
+        # Store class variables
+        self.__class__.USER_ABBREVIATIONS = self.user_abbreviations
+        self.__class__.USER_PRESERVED_TERMS = self.user_preserved_terms
+        
+        # Add user settings to the existing arrays
+        if self.user_abbreviations:
+            self.debug_print(f"Adding {len(self.user_abbreviations)} user abbreviations", level='normal')
+            self.ABBREVIATIONS.update(self.user_abbreviations)
+            
+        if self.user_preserved_terms:
+            self.debug_print(f"Adding {len(self.user_preserved_terms)} user preserved terms", level='normal')
+            self.PRESERVED_TERMS.extend(self.user_preserved_terms)
 
         self.directory = Path(directory)
         self.dry_run = dry_run
@@ -1379,6 +1393,9 @@ class FileRenamer:
             raise ValueError(f"Input filename contains invalid characters: {e}")
 
         self.debug_print(f"\nProcessing: {filename!r}", level='normal')
+
+        # Initialize titled_parts at the beginning to ensure it's always defined
+        titled_parts = [filename]
 
         # Normalize whitespace in the original filename
         original_filename = filename
@@ -1554,7 +1571,7 @@ class FileRenamer:
                                 break
 
                         titled_parts.append(part)
-                        self.debug_print(f"  Preserving marker as-is: {part!r} (original: {original_term!r})")
+                        self.debug_print(f"  Preserving marker as-is (original: {original_term!r})")
                         prev_part = part
                         continue
 
@@ -1636,9 +1653,9 @@ class FileRenamer:
                     if part.isalpha() or (len(part) > 1 and any(c.isalpha() for c in part)):
                         self.debug_print(f"  Checking abbreviation: part={part!r} isalpha={part.isalpha()!r}")
                         try:
-                            self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}     all titled_parts={titled_parts!r}")
+                            self.debug_print(f"    titled_parts[-2]={titled_parts[-2]!r}   titled_parts[-1]={titled_parts[-1]!r}")
                         except IndexError:
-                            self.debug_print(f"    Error Checking Abbreviation:    titled_parts={titled_parts!r}")
+                            pass
 
                     if part.isalpha():
                         # Check for compound abbreviation pattern (e.g. Lt.Col) or date pattern (e.g. 12.Jan)
@@ -1870,7 +1887,7 @@ class FileRenamer:
                             self.debug_print(f"  After unit processing: titled_parts={titled_parts!r}")
                             self.debug_print(f"  Remaining parts to process: {parts[i+1:]!r}")
                         else:
-                            self.debug_print(f"  No unit found, continuing with normal word processing for {word!r}")
+                            self.debug_print(f"  No unit found, for {word!r}")
                     except Exception as e:
                         self.debug_print(f"  ERROR in found_unit check: {e}")
 
@@ -1975,7 +1992,7 @@ class FileRenamer:
                     last_non_space = next((p for p in reversed(titled_parts) if p.strip()), '') if titled_parts else ''
 
                     # Always capitalize after certain punctuation or if it's the first/last word
-                    self.debug_print(f"  Title case check: first={not titled_parts}, last={word == last_real_word}, after_trigger={last_non_space in self.CAPITALIZATION_TRIGGERS}")
+                    # self.debug_print(f"  Title case check: first={not titled_parts}, last={word == last_real_word}, after_trigger={last_non_space in self.CAPITALIZATION_TRIGGERS}")
                     should_capitalize = (
                         not titled_parts or  # First word
                         last_non_space in self.CAPITALIZATION_TRIGGERS or  # After trigger characters
@@ -2038,7 +2055,7 @@ class FileRenamer:
             if '\uff06' in part:  # Full-width ampersand
                 titled_parts[i] = part.replace('\uff06', ' and ')
                 self.debug_print(f"Converted full-width ampersand to ' and ' in part: {titled_parts[i]!r}", level='normal')
-        
+
         # Restore Preserved Terms that were replaced with markers
         try:
             # Ensure titled_parts is defined before using it
@@ -2229,7 +2246,7 @@ def main():
         FileRenamer._debug = True
         os.environ['RENAMER_DEBUG'] = 'detail'  # Enable detailed debug output
 
-    renamer = FileRenamer(args.directory, dry_run=args.dry_run)
+    renamer = FileRenamer(args.directory, dry_run=args.dry_run, settings_path=args.settings_path)
     changes = renamer.process_files()
 
     if args.dry_run:
@@ -2296,6 +2313,127 @@ def main():
 
 # Validate replacements when module is loaded
 FileRenamer.validate_replacements()
+
+@classmethod
+def load_user_settings(cls, settings_path: Optional[str] = None) -> Tuple[Set[str], Set[str]]:
+    """Load user settings from settings.ini file.
+
+    Args:
+        settings_path: Optional path to settings file. If None, will search in standard locations.
+
+    Returns:
+        Tuple of (user_abbreviations, user_preserved_terms)
+    """
+    # Initialize empty sets for user settings
+    user_abbreviations = set()
+    user_preserved_terms = set()
+
+    # Find settings file
+    settings_file = cls._find_settings_file(settings_path)
+    if not settings_file:
+        # No settings file found, return empty sets
+        cls.debug_print(f"No settings file found", level='normal')
+        return user_abbreviations, user_preserved_terms
+
+    # Parse settings file
+    try:
+        current_section = None
+        with open(settings_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                # Remove comments and strip whitespace
+                line = line.split('#', 1)[0].strip()
+
+                if not line:  # Skip empty lines
+                    continue
+
+                # Check for section header
+                if line.startswith('[') and line.endswith(']'):
+                    section_name = line[1:-1].strip().lower()
+                    if section_name in ('abbreviations', 'preserved_terms'):
+                        current_section = section_name
+                    else:
+                        cls.debug_print(f"Warning: Unknown section '{section_name}' at line {line_num}", level='normal')
+                        current_section = None
+                elif current_section:
+                    # Validate entry
+                    if cls._is_valid_settings_entry(line):
+                        # Add entry to current section
+                        if current_section == 'abbreviations':
+                            user_abbreviations.add(line)
+                        else:  # preserved_terms
+                            user_preserved_terms.add(line)
+                    else:
+                        cls.debug_print(f"Warning: Invalid entry '{line}' at line {line_num}", level='normal')
+                else:
+                    cls.debug_print(f"Warning: Entry '{line}' at line {line_num} not in any section", level='normal')
+    except Exception as e:
+        cls.debug_print(f"Error reading settings file: {e}", level='normal')
+        # Return empty sets on error
+        return set(), set()
+
+    # Log the loaded settings
+    if user_abbreviations:
+        cls.debug_print(f"Loaded {len(user_abbreviations)} user abbreviations from {settings_file}", level='normal')
+    if user_preserved_terms:
+        cls.debug_print(f"Loaded {len(user_preserved_terms)} user preserved terms from {settings_file}", level='normal')
+
+    return user_abbreviations, user_preserved_terms
+
+@staticmethod
+def _is_valid_settings_entry(entry: str) -> bool:
+    """Validate a settings entry.
+
+    Args:
+        entry: The entry to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    # Check for control characters
+    if any(unicodedata.category(c).startswith('C') for c in entry):
+        return False
+
+    # Check length in UTF-16 encoding (NTFS limit)
+    if len(entry.encode('utf-16-le')) // 2 > 255:
+        return False
+
+    return True
+
+@staticmethod
+def _find_settings_file(settings_path: Optional[str] = None) -> Optional[str]:
+    """Find the settings file in standard locations.
+
+    Args:
+        settings_path: Optional path to settings file
+
+    Returns:
+        Path to settings file if found, None otherwise
+    """
+    # Check locations in order of priority
+    locations = []
+
+    # 1. Command-line specified path
+    if settings_path:
+        locations.append(settings_path)
+
+    # 2. Current directory
+    locations.append(os.path.join(os.getcwd(), 'settings.ini'))
+
+    # 3. User's home directory
+    home_dir = os.path.expanduser('~')
+    locations.append(os.path.join(home_dir, '.config', 'file_renamer', 'settings.ini'))
+
+    # Check each location
+    for location in locations:
+        if os.path.isfile(location):
+            return location
+
+    return None
+
+# Attach the methods to the FileRenamer class
+FileRenamer.load_user_settings = load_user_settings
+FileRenamer._is_valid_settings_entry = _is_valid_settings_entry
+FileRenamer._find_settings_file = _find_settings_file
 
 # Define a custom exception handler that will only be installed when this file is run directly (not when run with pytest)
 def global_exception_handler(exc_type, exc_value, exc_traceback):
