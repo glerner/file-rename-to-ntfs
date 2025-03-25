@@ -182,6 +182,386 @@ class FileRenamer:
     USER_ABBREVIATIONS = set()
     USER_PRESERVED_TERMS = set()
 
+    # Common abbreviations to preserve case
+    ABBREVIATIONS = {
+        # Academic Degrees (use periods just for testing the clean_abbreviation function)
+        'B.A', 'B.S', 'M.A', 'M.B.A', 'M.D', 'M.S', 'Ph.D', 'J.D', 'BSc', 'MSc', 'MPhil',
+
+        # Professional Titles (multi-letter, no periods)
+        'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Rev',
+        'Hon',  # Honorable (Judge)
+        'Sr', 'Sra', 'Srta',  # Señor, Señora, Señorita
+        'Asst',              # Assistant
+        'VP', 'EVP', 'SVP',  # Vice President variants
+
+        # Name Suffixes (no periods)
+        'Jr', 'Sr', 'II', 'III', 'IV',  # Note: V excluded as it conflicts with 'versus'
+
+        # Military Ranks (no periods)
+        'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
+        'Maj', 'Adm', 'Cmdr', 'Brig', # More ranks
+        'USMC', 'USN', 'USAF',  # Service branches
+
+        # Movie/TV Ratings (no periods)
+        'TV', 'G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
+        # not handled properly, gets broken up at hyphen into parts
+
+        # TV Networks
+        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS', 'MSNBC',
+        'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC', 'O\'Donnell', 'O\'Reilly',
+
+        # US States (excluding those that conflict with common words, see KEEP_CAPITALIZED_IF_ALLCAPS)
+        'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'FL',
+        'GA', 'ID', 'IL', 'KS', 'KY', 'MD', 'MI',
+        'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV',
+        'NY', 'OK', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
+        'VA', 'VT', 'WI', 'WV', 'WY',
+        # 'DE' Delaware conflicts with common Spanish word 'de'
+        # 'HI', 'LA', 'MA', 'ME', 'OH', 'OR', 'PA' conflict with English words
+
+        # Canadian Provinces (excluding ON, a lowercase word)
+        'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'QC', 'SK', 'YT',
+
+        # Countries and Regions
+        'UK', 'USA', 'EU', 'UAE', 'USSR',  # 'US' moved to KEEP_CAPITALIZED_IF_ALLCAPS
+
+        # Time/Date (AM and PM handled special case)
+        'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT', 'UTC',
+
+        # Government/Organizations
+        'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOJ', 'FBI', 'FCC',
+        'FDA', 'FEMA', 'FTC', 'IRS', 'NASA', 'NOAA', 'NSA', 'TSA', 'USDA',
+        'EPA', 'SSA', 'UN', 'USPS',
+        # not 'SEC', 'sec' is a numbered unit,
+        # 'ICE' in KEEP_CAPITALIZED_IF_ALLCAPS
+
+        # Mexican States (official abbreviations)
+        'AGS',  # Aguascalientes
+        'BC',   # Baja California
+        'BCS',  # Baja California Sur
+        'CAMP', # Campeche
+        'CHIS', # Chiapas
+        'CHIH', # Chihuahua
+        'COAH', # Coahuila
+        # 'COL',  # Colima also Col Colonel
+        'CDMX', # Ciudad de México
+        'DGO',  # Durango
+        'GTO',  # Guanajuato
+        'GRO',  # Guerrero
+        'HGO',  # Hidalgo
+        'JAL',  # Jalisco
+        'MEX',  # Estado de México
+        'MICH', # Michoacán
+        'MOR',  # Morelos
+        'NAY',  # Nayarit
+        'NL',   # Nuevo León
+        'OAX',  # Oaxaca
+        'PUE',  # Puebla
+        'QRO',  # Querétaro
+        'QROO', # Quintana Roo
+        'SLP',  # San Luis Potosí
+        # 'SIN',  # Sinaloa exclude, a word
+        # 'SON',  # Sonora exclude, a word
+        # 'TAB',  # Tabasco exclude, a word
+        'TAMPS',# Tamaulipas
+        'TLAX', # Tlaxcala
+        'VER',  # Veracruz
+        'YUC',  # Yucatán
+        'ZAC',  # Zacatecas
+
+        # Operating Systems and File Systems
+        'DOS', 'OS/X', 'NTFS', 'FAT32', 'exFAT',
+
+        # Technology Standards and Formats
+        'CD', 'DVD', 'GB', 'HD', 'HDMI', 'VGA', 'HTML', 'HTTP', 'HTTPS',
+        'IP', 'ISO', 'KB', 'MB', 'MP3', 'MP4', 'MPEG', 'PDF', 'RAM', 'ROM',
+        'SQL', 'TB', 'USB', 'VHS', 'XML', 'JSON', 'PHP', 'Wi-Fi',
+        'CPU', 'GPU', 'SSD', 'HDD', 'NVMe', 'SATA', 'RAID', 'LAN', 'WAN',
+        'DNS', 'FTP', 'SSH', 'SSL', 'TLS', 'URL', 'URI', 'API', 'SDK',
+        'IDE', 'GUI', 'CLI', 'CSS', 'RSS', 'UPC', 'UPS','QR', 'AI', 'ML',
+
+        # Time/Date
+        'UTC', 'UTC+', 'UTC-', 'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT',
+        'AKST', 'AKDT', 'HST', 'HDT', 'AST', 'ADT', 'NST', 'NDT',
+        'BST', 'BDT', 'CST', 'CDT', 'EST', 'EDT', 'GMT', 'HAT', 'HNT', 'IST', 'JST',
+        'KST', 'MDT', 'MESZ', 'MET', 'MST', 'MDT', 'PDT', 'PST', 'SST', 'UTC', 'WET',
+        'WST', 'YST', 'YST', 'ZST',
+
+        # Media Formats
+        # Images
+        'JPEG', 'JPG', 'PNG', 'GIF', 'BMP', 'TIF', 'TIFF', 'SVG', 'WebP',
+        # Video
+        'AVI', 'MP4', 'MKV', 'MOV', 'WMV', 'FLV', 'WebM', 'M4V', 'VOB',
+        # Audio
+        'MP3', 'WAV', 'AAC', 'OGG', 'FLAC', 'WMA', 'M4A',
+        # Quality/Standards
+        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
+
+        # Business/Organizations
+        'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
+        'VP',
+        # Note: removed VS, conflicts with 'vs' versus
+        # removed HR (human resources) since conflicts with hr (hour)
+
+        # Other Common
+        'ID', 'OK', 'PC', 'PIN', 'PO', 'ps', 'RIP', 'UFO', 'VIP', 'ZIP',
+        'DIY', 'FAQ', 'ASAP', 'IMAX', 'AGT', 'BGT',
+
+        # Software/Platforms
+        'WordPress', 'SEO', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'NoSQL', 'PostgreSQL', 'JavaScript', 'TypeScript',
+
+        # Apple products and special case words (merged from SPECIAL_CASE_WORDS)
+        'iPad', 'iPhone', 'iPod', 'iTunes', 'iMac',
+        'macOS', 'iOS',  # Operating systems
+    }
+
+    # Units that can appear standalone without numbers
+    STANDALONE_UNITS = {
+        'hr', 'h',    # hour
+        'min',       # minute (but not 'm' which is meters)
+        's', 'sec',  # second
+        'd',         # day
+        'wk',        # week
+        'mo',        # month
+        'yr',        # year
+        'sq',        # square
+        'sqm'        # square meters
+    }
+
+    # Common units in filenames that need specific capitalization
+    R = CHAR_REPLACEMENTS  # Shorthand for readability
+    UNIT_PATTERNS = {
+        # Weight units (no space, preserve case)
+        r'\d+mg\b': lambda s: f"{s}",  # 5mg -> 5mg
+        r'\d+g\b': lambda s: f"{s}",   # 5g -> 5g
+        r'\d+kg\b': lambda s: f"{s}",  # 5kg -> 5kg
+
+        # Data units (preserve original case)
+        r'\d+kb\b': lambda s: f"{s}",  # 5kb -> 5kb
+        r'\d+KB\b': lambda s: f"{s}",  # 5KB -> 5KB
+        r'\d+[mgt]b\b': lambda s: f"{s}",  # Keep original case
+        r'\d+[MGT]B\b': lambda s: f"{s}",  # Keep original case
+
+        # Network speed (preserve case)
+        r'\d+kbps\b': lambda s: f"{s}",  # 5kbps -> 5kbps
+        r'\d+[mgt]bps\b': lambda s: f"{s}",  # 5mbps -> 5mbps
+
+        # Frequency (k lowercase, M/G/T uppercase + Hz)
+        r'\d+hz\b': lambda s: f"{s[:-2]}Hz",  # 100hz -> 100Hz
+        r'\d+khz': lambda s: f"{s[:-3]}kHz",  # 100khz -> 100kHz
+        r'\d+[mgt]hz': lambda s: f"{s[:-3]}{s[-3].upper()}Hz",  # 100mhz -> 100MHz
+
+        # Time (always uppercase)
+        r'\d+[ap]m': lambda s: f"{s[:-2]}{s[-2:].upper()}",  # 5pm -> 5PM
+
+        # Liters (L always uppercase)
+        r'\d+l\b': lambda s: f"{s[:-1]}L",  # 5l -> 5L
+        r'\d+[kmgt]l\b': lambda s: f"{s[:-2]}{s[-2].lower()}L",  # 5ml -> 5mL
+
+        # Video resolutions (p/i lowercase, number preserved)
+        r'\d+[pi]\b': lambda s: f"{s}",  # 1080p -> 1080p, 1080i -> 1080i
+        r'\d+k\b': lambda s: f"{s}",  # 4k -> 4k
+        r'\d+K\b': lambda s: f"{s}",  # 4K -> 4K
+
+        # Greek letter units (always uppercase)
+        r'\d+ω\b': lambda s: f"{s[:-1]}Ω",  # 100ω -> 100Ω
+
+        # Square measurements
+        r'\d+sq\b': lambda s: f"{s}",  # 50sq -> 50sq
+        r'\d+sqm\b': lambda s: f"{s}",  # 100sqm -> 100sqm
+
+        # Single-letter SI units (W, V, A, J, N)
+        r'\d+w\b': lambda s: f"{s[:-1]}W",   # 100w -> 100W (Watt)
+        r'\d+v\b': lambda s: f"{s[:-1]}V",   # 5v -> 5V (Volt)
+        r'\d+a\b': lambda s: f"{s[:-1]}A",   # 5a -> 5A (Ampere)
+        r'\d+j\b': lambda s: f"{s[:-1]}J",   # 100j -> 100J (Joule)
+        r'\d+n\b': lambda s: f"{s[:-1]}N",   # 10n -> 10N (Newton)
+
+        # SI prefixes for single-letter units
+        # k (kilo) is lowercase, M/G/T uppercase
+        r'\d+k[wvajn]\b': lambda s: f"{s[:-2]}k{s[-1].upper()}", # 5kw -> 5kW
+        r'\d+[mgt][wvajn]\b': lambda s: f"{s[:-2]}{s[-2].upper()}{s[-1].upper()}", # 5mw -> 5MW, 5gw -> 5GW, 5tw -> 5TW
+
+        # Digital units (preserve lowercase)
+        r'\d+bit\b': lambda s: f"{s}",  # 24bit
+        r'\d+fps\b': lambda s: f"{s}",  # 30fps
+        r'\d+rpm\b': lambda s: f"{s}",  # 33rpm
+        r'\d+mph\b': lambda s: f"{s}",  # 60mph
+        r'\d+mpg\b': lambda s: f"{s}",  # 35mpg (miles per gallon)
+        r'\d+lkm\b': lambda s: f"{s}",  # 7lkm (liters per kilometer)
+        r'\d+deg\b': lambda s: f"{s}",  # 68deg
+
+        # Ordinal numbers
+        r'\b1[1-9]th\b': lambda s: f"{s.lower()}",  # special cases 11th through 19th
+        r'\b\d*1st\b': lambda s: f"{s.lower()}",    # 1ST -> 1st, 21ST -> 21st, 101ST -> 101st
+        r'\b\d*2nd\b': lambda s: f"{s.lower()}",    # 2ND -> 2nd, 32ND -> 32nd, 442ND -> 442nd
+        r'\b\d*3rd\b': lambda s: f"{s.lower()}",    # 3RD -> 3rd, 43RD -> 43rd, 333RD -> 333rd
+        r'\b\d*[4-9]th\b': lambda s: f"{s.lower()}", # 4TH -> 4th, 75TH -> 75th, 999TH -> 999th
+
+        # Temperature units (always uppercase)
+        r'\d+k\b': lambda s: f"{s[:-1]}K",   # 5k -> 5K (Kelvin)
+        r'\d+c\b': lambda s: f"{s[:-1]}C",   # 25c -> 25C (Celsius)
+        r'\d+f\b': lambda s: f"{s[:-1]}F",   # 75f -> 75F (Fahrenheit)
+
+        # Two-letter units
+        r'\d+pa\b': lambda s: f"{s[:-2]}Pa",  # 100pa -> 100Pa
+        r'\d+kpa\b': lambda s: f"{s[:-3]}kPa",  # 5kpa -> 5kPa
+        r'\d+[mgt]pa\b': lambda s: f"{s[:-3]}{s[-3].upper()}Pa",  # 5mpa -> 5MPa, 5gpa -> 5GPa
+
+        r'\d+wh\b': lambda s: f"{s[:-2]}Wh",  # 100wh -> 100Wh
+        r'\d+kwh\b': lambda s: f"{s[:-3]}kWh",  # 5kwh -> 5kWh
+        r'\d+[mgt]wh\b': lambda s: f"{s[:-3]}{s[-3].upper()}Wh",  # 5mwh -> 5MWh, 5gwh -> 5GWh
+
+        r'\d+va\b': lambda s: f"{s[:-2]}VA",  # 100va -> 100VA
+        r'\d+kva\b': lambda s: f"{s[:-3]}kVA",  # 5kva -> 5kVA
+        r'\d+[mgt]va\b': lambda s: f"{s[:-3]}{s[-3].upper()}VA",  # 5mva -> 5MVA, 5gva -> 5GVA
+
+        # Distance (m lowercase for meter)
+        r'\d+m\b': lambda s: f"{s[:-1]}m",  # 5M -> 5m (bare meters)
+        r'\d+[kmgt]m\b': lambda s: f"{s[:-1]}{s[-1].lower()}",  # 5KM -> 5km
+
+        # Imperial/British units (naturally lowercase after digits)
+        # Length: ft, in, mi
+        # Volume: oz, qt, gal
+        # Weight: lb, oz
+        # Temperature: F (handled above with other temperature units)
+
+        # Time units (with or without numbers)
+        # Hours
+        r'\b\d*\s*hr\b': lambda s: f"{s}",  # 24hr -> 24hr, hr -> hr
+        r'\b\d*\s*h\b': lambda s: f"{s}",   # 24h -> 24h, h -> h
+        r'\b\d*\s*/\s*hr\b': lambda s: re.sub(r'(\d*)\s*/\s*hr',
+            lambda m: f"{m.group(1)}{R['/']}", s),  # 30/hr -> 30⧸hr, /hr -> ⧸hr
+        r'\b\d*\s*/\s*h\b': lambda s: re.sub(r'(\d*)\s*/\s*h',
+            lambda m: f"{m.group(1)}{R['/']}", s),   # 30/h -> 30⧸h, /h -> ⧸h
+
+        # Minutes
+        r'\b\d*\s*min\b': lambda s: f"{s}",  # 15min -> 15min, min -> min
+        r'\b\d*\s*/\s*min\b': lambda s: re.sub(r'(\d*)\s*/\s*min',
+            lambda m: f"{m.group(1)}{R['/']}", s),  # 30/min -> 30⧸min, /min -> ⧸min
+
+        # Seconds
+        r'\b\d*\s*sec\b': lambda s: f"{s}",  # 30sec -> 30sec, sec -> sec
+        r'\b\d*\s*s\b': lambda s: f"{s}",    # 30s -> 30s, s -> s
+        r'\b\d*\s*/\s*sec\b': lambda s: re.sub(r'(\d*)\s*/\s*sec',
+            lambda m: f"{m.group(1)}{R['/']}", s),  # 30/sec -> 30⧸sec, /sec -> ⧸sec
+        r'\b\d*\s*/\s*s\b': lambda s: re.sub(r'(\d*)\s*/\s*s',
+            lambda m: f"{m.group(1)}{R['/']}", s),    # 30/s -> 30⧸s, /s -> ⧸s
+
+        # Days, Weeks, Months, Years
+        r'\b\d*\s*d\b': lambda s: f"{s}",    # 30d -> 30d, d -> d
+        r'\b\d*\s*wk\b': lambda s: f"{s}",  # 52wk -> 52wk, wk -> wk
+        r'\b\d*\s*mo\b': lambda s: f"{s}",  # 12mo -> 12mo, mo -> mo
+        r'\b\d*\s*yr\b': lambda s: f"{s}",  # 10yr -> 10yr, yr -> yr
+
+        r'\b\d*\s*/\s*d\b': lambda s: re.sub(r'(\d*)\s*/\s*d',
+            lambda m: f"{m.group(1)}{R['/']}", s),    # 30/d -> 30⧸d, /d -> ⧸d
+        r'\b\d*\s*/\s*wk\b': lambda s: re.sub(r'(\d*)\s*/\s*wk',
+            lambda m: f"{m.group(1)}{R['/']}", s),  # 52/wk -> 52⧸wk, /wk -> ⧸wk
+        r'\b\d*\s*/\s*mo\b': lambda s: re.sub(r'(\d*)\s*/\s*mo',
+            lambda m: f"{m.group(1)}{R['/']}", s),  # 12/mo -> 12⧸mo, /mo -> ⧸mo
+        r'\b\d*\s*/\s*yr\b': lambda s: re.sub(r'(\d*)\s*/\s*yr',
+            lambda m: f"{m.group(1)}{R['/']}", s),  # 10/yr -> 10⧸yr, /yr -> ⧸yr
+    }
+
+    # Month names and abbreviations with proper capitalization
+    # In __init__, MONTH_FORMATS values get added to:
+    # 1. ABBREVIATIONS - to handle dates with separators like 25-Jan-12
+    # 2. UNIT_PATTERNS - to handle dates without separators like 2025jan12
+    MONTH_FORMATS = {
+        # English full names
+        'january': 'January', 'february': 'February', 'march': 'March',
+        'april': 'April', 'may': 'May', 'june': 'June', 'july': 'July',
+        'august': 'August', 'september': 'September', 'october': 'October',
+        'november': 'November', 'december': 'December',
+        # English abbreviations
+        'jan': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'apr': 'Apr',
+        'jun': 'Jun', 'jul': 'Jul', 'aug': 'Aug',
+        'sep': 'Sep', 'sept': 'Sept', 'oct': 'Oct', 'nov': 'Nov', 'dec': 'Dec',
+        # Spanish full names
+        'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo',
+        'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio',
+        'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre',
+        'noviembre': 'Noviembre', 'diciembre': 'Diciembre',
+        # Spanish abbreviations
+        'ene': 'Ene', 'abr': 'Abr', 'ago': 'Ago', 'dic': 'Dic'
+    }
+
+    # Common words that should not be capitalized in titles
+    LOWERCASE_WORDS = {
+        # Articles
+        'a', 'an', 'the',
+
+        # Coordinating Conjunctions
+        'and', 'but', 'for', 'nor', 'or', 'so', 'yet',
+
+        # Short Prepositions (under 5 letters)
+        'at', 'by', 'down', 'for', 'from', 'in', 'into',
+        'like', 'near', 'of', 'off', 'on', 'onto', 'out',
+        'over', 'past', 'to', 'up', 'upon', 'with',
+
+        # Common Particles
+        'as', 'if', 'how', 'than', 'v', 'vs',   # v/vs for versus
+
+        # Common Words in Media Titles
+        'part', 'vol', 'feat', 'ft', 'remix',
+
+        # Be Verbs (when not first/last)
+        'am', 'are', 'is', 'was', 'were', 'be', 'been',
+
+        # Spanish
+        'a', 'con', 'de', 'del', 'el', 'la', 'las', 'lo', 'los',
+        'para', 'por', 'que', 'su', 'una', 'unas', 'unos', 'y'
+    }
+
+    # Dictionary for words that should only be kept capitalized if they appear in all caps
+    # Otherwise they should be converted to lowercase
+    KEEP_CAPITALIZED_IF_ALLCAPS = {
+        # Alphabetically sorted by key
+        'AS': 'as',   # American Samoa - 'as' conjunction/adverb
+        'BY': 'by',   # Belarus - 'by' preposition
+        'CAMP': 'camp', # Campeche (Mexican state) - 'camp' English word
+        'COL': 'Col',  # Colima - 'Col' Colonel
+        'DE': 'de',  # Delaware - 'de' Spanish (of/from)
+        'DO': 'do',   # Dominican Republic - 'do' verb
+        'DOE': 'doe', # Department of Energy - 'doe' female deer
+        'FDR': 'FDR', # Franklin D. Roosevelt - 'FDR' initials
+        'HE': 'he',   # Hesse, Germany - 'he' pronoun
+        'HI': 'hi',  # Hawaii - 'hi' English exclamation
+        'HR': 'hr',   # Human Resources - 'hr' hour
+        'ICE': 'ice', # Immigration and Customs Enforcement - 'ice' frozen water
+        'IN': 'in',  # Indiana - 'in' English preposition
+        'IS': 'is',   # Information Systems - 'is' verb
+        'IT': 'it',   # Information Technology - 'it' pronoun
+        'JFK': 'JFK', # John F. Kennedy - 'JFK' initials
+        'LA': 'la',  # Louisiana - 'la' English exclamation
+        'MA': 'ma',  # Massachusetts - 'ma' mother
+        'ME': 'me',  # Maine - 'me' English pronoun
+        'MS': 'Ms',   # Mississippi - 'Ms' title
+        'NAY': 'nay', # Nayarit (Mexican state) - 'nay' English word
+        'NO': 'no',   # Norway - 'no' negative
+        'NOR': 'nor', # Norway - 'nor' conjunction
+        'OH': 'oh',  # Ohio - 'oh' English exclamation
+        'ON': 'on',  # Ontario - 'on' English preposition
+        'OR': 'or',  # Oregon - 'or' English conjunction
+        'PA': 'pa',  # Pennsylvania - 'pa' Spanish/father in several languages
+        'PC': 'pc',   # Personal Computer - 'pc' piece
+        'PST': 'pst', # Pacific Standard Time - 'pst' exclamation
+        'RAM': 'ram', # Random Access Memory - 'ram' male sheep
+        # NOT 'SEC': 'sec', # Securities and Exchange Commission - 'sec' second
+        'SIN': 'sin',  # Sinaloa - 'sin' English word
+        'SO': 'so',   # Somalia - 'so' adverb
+        'SON': 'son',  # Sonora - 'son' English word
+        'STEM': 'stem',  # Science, Technology, Engineering, Math - 'stem' plant part
+        'TAB': 'tab',  # Tabasco - 'tab' word
+        'TO': 'to',   # Toronto - 'to' preposition
+
+        'UP': 'up',   # Uttar Pradesh, India - 'up' preposition
+        'US': 'us',  # United States - 'us' English word
+        'VER': 'ver', # Veracruz (Mexican state) - 'ver' version abbreviation
+        'WA': 'wa',  # Washington - 'wa' Spanish dialect word
+    }
+
     # All opening bracket characters (ASCII and replacements)
     OPENING_BRACKETS = {
         # ASCII opening brackets
@@ -191,6 +571,14 @@ class FileRenamer:
         R['<<'],  # Left Double Angle Bracket
         R['[['],  # Mathematical Left White Square Bracket
         R['{{'],  # Left White Curly Bracket
+        # Additional Unicode opening brackets
+        '（',     # Full Width Left Parenthesis
+        '［',     # Full Width Left Square Bracket
+        '｛',     # Full Width Left Curly Bracket
+        '⦅',     # Left White Parenthesis
+        '〔',     # Left Tortoise Shell Bracket
+        '〈',     # Left Angle Bracket
+        '「',     # Left Corner Bracket
     }
 
     # All closing bracket characters (ASCII and replacements)
@@ -202,6 +590,26 @@ class FileRenamer:
         R['>>'],  # Right Double Angle Bracket
         R[']]'],  # Mathematical Right White Square Bracket
         R['}}'],  # Right White Curly Bracket
+        # Additional Unicode closing brackets
+        '）',     # Full Width Right Parenthesis
+        '］',     # Full Width Right Square Bracket
+        '｝',     # Full Width Right Curly Bracket
+        '⦆',     # Right White Parenthesis
+        '〕',     # Right Tortoise Shell Bracket
+        '〉',     # Right Angle Bracket
+        '」',     # Right Corner Bracket
+    }
+
+    # Characters that trigger capitalization of the next word
+    CAPITALIZATION_TRIGGERS = {
+        '.',  # Period
+        '-',  # Dash/Hyphen
+        R['...'],  # Ellipsis
+        R[':'],    # Colon
+        R['|'],    # Pipe/Vertical bar
+        '¿',   # Spanish inverted question mark
+        '¡',   # Spanish inverted exclamation mark
+        *OPENING_BRACKETS  # All opening brackets
     }
 
     # Characters that are allowed at the end of a filename
@@ -711,174 +1119,10 @@ class FileRenamer:
 
         return text
 
-    # Common abbreviations to preserve case
-    ABBREVIATIONS = {
-        # Academic Degrees (use periods just for testing the clean_abbreviation function)
-        'B.A', 'B.S', 'M.A', 'M.B.A', 'M.D', 'M.S', 'Ph.D', 'J.D', 'BSc', 'MSc', 'MPhil',
 
-        # Professional Titles (multi-letter, no periods)
-        'Dr', 'Mr', 'Mrs', 'Ms', 'Prof', 'Rev',
-        'Hon',  # Honorable (Judge)
-        'Sr', 'Sra', 'Srta',  # Señor, Señora, Señorita
-        'Asst',              # Assistant
-        'VP', 'EVP', 'SVP',  # Vice President variants
 
-        # Name Suffixes (no periods)
-        'Jr', 'Sr', 'II', 'III', 'IV',  # Note: V excluded as it conflicts with 'versus'
 
-        # Military Ranks (no periods)
-        'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
-        'Maj', 'Adm', 'Cmdr', 'Brig', # More ranks
-        'USMC', 'USN', 'USAF',  # Service branches
 
-        # Movie/TV Ratings (no periods)
-        'TV', 'G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
-        # not handled properly, gets broken up at hyphen into parts
-
-        # TV Networks
-        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS', 'MSNBC',
-        'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC', 'O\'Donnell', 'O\'Reilly',
-
-        # US States (excluding those that conflict with common words, see KEEP_CAPITALIZED_IF_ALLCAPS)
-        'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'FL',
-        'GA', 'ID', 'IL', 'KS', 'KY', 'MD', 'MI',
-        'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV',
-        'NY', 'OK', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
-        'VA', 'VT', 'WI', 'WV', 'WY',
-        # 'DE' Delaware conflicts with common Spanish word 'de'
-        # 'HI', 'LA', 'MA', 'ME', 'OH', 'OR', 'PA' conflict with English words
-
-        # Canadian Provinces (excluding ON, a lowercase word)
-        'AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'PE', 'QC', 'SK', 'YT',
-
-        # Countries and Regions
-        'UK', 'USA', 'EU', 'UAE', 'USSR',  # 'US' moved to KEEP_CAPITALIZED_IF_ALLCAPS
-
-        # Time/Date (AM and PM handled special case)
-        'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT', 'UTC',
-
-        # Government/Organizations
-        'CIA', 'DEA', 'DHS', 'DMV', 'DOD', 'DOJ', 'FBI', 'FCC',
-        'FDA', 'FEMA', 'FTC', 'IRS', 'NASA', 'NOAA', 'NSA', 'TSA', 'USDA',
-        'EPA', 'SSA', 'UN', 'USPS',
-        # not 'SEC', 'sec' is a numbered unit,
-        # 'ICE' in KEEP_CAPITALIZED_IF_ALLCAPS
-
-        # Mexican States (official abbreviations)
-        'AGS',  # Aguascalientes
-        'BC',   # Baja California
-        'BCS',  # Baja California Sur
-        'CAMP', # Campeche
-        'CHIS', # Chiapas
-        'CHIH', # Chihuahua
-        'COAH', # Coahuila
-        # 'COL',  # Colima also Col Colonel
-        'CDMX', # Ciudad de México
-        'DGO',  # Durango
-        'GTO',  # Guanajuato
-        'GRO',  # Guerrero
-        'HGO',  # Hidalgo
-        'JAL',  # Jalisco
-        'MEX',  # Estado de México
-        'MICH', # Michoacán
-        'MOR',  # Morelos
-        'NAY',  # Nayarit
-        'NL',   # Nuevo León
-        'OAX',  # Oaxaca
-        'PUE',  # Puebla
-        'QRO',  # Querétaro
-        'QROO', # Quintana Roo
-        'SLP',  # San Luis Potosí
-        # 'SIN',  # Sinaloa exclude, a word
-        # 'SON',  # Sonora exclude, a word
-        # 'TAB',  # Tabasco exclude, a word
-        'TAMPS',# Tamaulipas
-        'TLAX', # Tlaxcala
-        'VER',  # Veracruz
-        'YUC',  # Yucatán
-        'ZAC',  # Zacatecas
-
-        # Operating Systems and File Systems
-        'DOS', 'OS/X', 'NTFS', 'FAT32', 'exFAT',
-
-        # Technology Standards and Formats
-        'CD', 'DVD', 'GB', 'HD', 'HDMI', 'VGA', 'HTML', 'HTTP', 'HTTPS',
-        'IP', 'ISO', 'KB', 'MB', 'MP3', 'MP4', 'MPEG', 'PDF', 'RAM', 'ROM',
-        'SQL', 'TB', 'USB', 'VHS', 'XML', 'JSON', 'PHP', 'Wi-Fi',
-        'CPU', 'GPU', 'SSD', 'HDD', 'NVMe', 'SATA', 'RAID', 'LAN', 'WAN',
-        'DNS', 'FTP', 'SSH', 'SSL', 'TLS', 'URL', 'URI', 'API', 'SDK',
-        'IDE', 'GUI', 'CLI', 'CSS', 'RSS', 'UPC', 'UPS','QR', 'AI', 'ML',
-
-        # Time/Date
-        'UTC', 'UTC+', 'UTC-', 'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', 'GMT',
-        'AKST', 'AKDT', 'HST', 'HDT', 'AST', 'ADT', 'NST', 'NDT',
-        'BST', 'BDT', 'CST', 'CDT', 'EST', 'EDT', 'GMT', 'HAT', 'HNT', 'IST', 'JST',
-        'KST', 'MDT', 'MESZ', 'MET', 'MST', 'MDT', 'PDT', 'PST', 'SST', 'UTC', 'WET',
-        'WST', 'YST', 'YST', 'ZST',
-
-        # Media Formats
-        # Images
-        'JPEG', 'JPG', 'PNG', 'GIF', 'BMP', 'TIF', 'TIFF', 'SVG', 'WebP',
-        # Video
-        'AVI', 'MP4', 'MKV', 'MOV', 'WMV', 'FLV', 'WebM', 'M4V', 'VOB',
-        # Audio
-        'MP3', 'WAV', 'AAC', 'OGG', 'FLAC', 'WMA', 'M4A',
-        # Quality/Standards
-        '4K', '8K', 'HDR', 'DTS', 'IMAX', 'UHD',
-
-        # Business/Organizations
-        'CEO', 'CFO', 'CIO', 'COO', 'CTO', 'LLC', 'LLP',
-        'VP',
-        # Note: removed VS, conflicts with 'vs' versus
-        # removed HR (human resources) since conflicts with hr (hour)
-
-        # Other Common
-        'ID', 'OK', 'PC', 'PIN', 'PO', 'ps', 'RIP', 'UFO', 'VIP', 'ZIP',
-        'DIY', 'FAQ', 'ASAP', 'IMAX', 'AGT', 'BGT',
-
-        # Software/Platforms
-        'WordPress', 'SEO', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'NoSQL', 'PostgreSQL', 'JavaScript', 'TypeScript',
-
-        # Apple products and special case words (merged from SPECIAL_CASE_WORDS)
-        'iPad', 'iPhone', 'iPod', 'iTunes', 'iMac',
-        'macOS', 'iOS',  # Operating systems
-    }
-
-    # Month names and abbreviations with proper capitalization
-    # In __init__, MONTH_FORMATS values get added to:
-    # 1. ABBREVIATIONS - to handle dates with separators like 25-Jan-12
-    # 2. UNIT_PATTERNS - to handle dates without separators like 2025jan12
-    # Units that can appear standalone without numbers
-    STANDALONE_UNITS = {
-        'hr', 'h',    # hour
-        'min',       # minute (but not 'm' which is meters)
-        's', 'sec',  # second
-        'd',         # day
-        'wk',        # week
-        'mo',        # month
-        'yr',        # year
-        'sq',        # square
-        'sqm'        # square meters
-    }
-
-    MONTH_FORMATS = {
-        # English full names
-        'january': 'January', 'february': 'February', 'march': 'March',
-        'april': 'April', 'may': 'May', 'june': 'June', 'july': 'July',
-        'august': 'August', 'september': 'September', 'october': 'October',
-        'november': 'November', 'december': 'December',
-        # English abbreviations
-        'jan': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'apr': 'Apr',
-        'jun': 'Jun', 'jul': 'Jul', 'aug': 'Aug',
-        'sep': 'Sep', 'sept': 'Sept', 'oct': 'Oct', 'nov': 'Nov', 'dec': 'Dec',
-        # Spanish full names
-        'enero': 'Enero', 'febrero': 'Febrero', 'marzo': 'Marzo',
-        'abril': 'Abril', 'mayo': 'Mayo', 'junio': 'Junio', 'julio': 'Julio',
-        'agosto': 'Agosto', 'septiembre': 'Septiembre', 'octubre': 'Octubre',
-        'noviembre': 'Noviembre', 'diciembre': 'Diciembre',
-        # Spanish abbreviations
-        'ene': 'Ene', 'abr': 'Abr', 'ago': 'Ago', 'dic': 'Dic'
-    }
 
 
     # Common units in filenames that need specific capitalization
@@ -1017,92 +1261,7 @@ class FileRenamer:
             lambda m: f"{m.group(1)}{R['/']}yr", s),  # 10/yr -> 10⧸yr, /yr -> ⧸yr
     }
 
-    # Common words that should not be capitalized in titles
-    LOWERCASE_WORDS = {
-        # Articles
-        'a', 'an', 'the',
 
-        # Coordinating Conjunctions
-        'and', 'but', 'for', 'nor', 'or', 'so', 'yet',
-
-        # Short Prepositions (under 5 letters)
-        'at', 'by', 'down', 'for', 'from', 'in', 'into',
-        'like', 'near', 'of', 'off', 'on', 'onto', 'out',
-        'over', 'past', 'to', 'up', 'upon', 'with',
-
-        # Common Particles
-        'as', 'if', 'how', 'than', 'v', 'vs',   # v/vs for versus
-
-        # Common Words in Media Titles
-        'part', 'vol', 'feat', 'ft', 'remix',
-
-        # Be Verbs (when not first/last)
-        'am', 'are', 'is', 'was', 'were', 'be', 'been',
-
-        # Spanish
-        'a', 'con', 'de', 'del', 'el', 'la', 'las', 'lo', 'los',
-        'para', 'por', 'que', 'su', 'una', 'unas', 'unos', 'y'
-    }
-
-    # Dictionary for words that should only be kept capitalized if they appear in all caps
-    # Otherwise they should be converted to lowercase
-    KEEP_CAPITALIZED_IF_ALLCAPS = {
-        # Alphabetically sorted by key
-        'AS': 'as',   # American Samoa - 'as' conjunction/adverb
-        'BY': 'by',   # Belarus - 'by' preposition
-        'CAMP': 'camp', # Campeche (Mexican state) - 'camp' English word
-        'COL': 'Col',  # Colima - 'Col' Colonel
-        'DE': 'de',  # Delaware - 'de' Spanish (of/from)
-        'DO': 'do',   # Dominican Republic - 'do' verb
-        'DOE': 'doe', # Department of Energy - 'doe' female deer
-        'FDR': 'FDR', # Franklin D. Roosevelt - 'FDR' initials
-        'HE': 'he',   # Hesse, Germany - 'he' pronoun
-        'HI': 'hi',  # Hawaii - 'hi' English exclamation
-        'HR': 'hr',   # Human Resources - 'hr' hour
-        'ICE': 'ice', # Immigration and Customs Enforcement - 'ice' frozen water
-        'IN': 'in',  # Indiana - 'in' English preposition
-        'IS': 'is',   # Information Systems - 'is' verb
-        'IT': 'it',   # Information Technology - 'it' pronoun
-        'JFK': 'JFK', # John F. Kennedy - 'JFK' initials
-        'LA': 'la',  # Louisiana - 'la' English exclamation
-        'MA': 'ma',  # Massachusetts - 'ma' mother
-        'ME': 'me',  # Maine - 'me' English pronoun
-        'MS': 'Ms',   # Mississippi - 'Ms' title
-        'NAY': 'nay', # Nayarit (Mexican state) - 'nay' English word
-        'NO': 'no',   # Norway - 'no' negative
-        'NOR': 'nor', # Norway - 'nor' conjunction
-        'OH': 'oh',  # Ohio - 'oh' English exclamation
-        'ON': 'on',  # Ontario - 'on' English preposition
-        'OR': 'or',  # Oregon - 'or' English conjunction
-        'PA': 'pa',  # Pennsylvania - 'pa' Spanish/father in several languages
-        'PC': 'pc',   # Personal Computer - 'pc' piece
-        'PST': 'pst', # Pacific Standard Time - 'pst' exclamation
-        'RAM': 'ram', # Random Access Memory - 'ram' male sheep
-        # NOT 'SEC': 'sec', # Securities and Exchange Commission - 'sec' second
-        'SIN': 'sin',  # Sinaloa - 'sin' English word
-        'SO': 'so',   # Somalia - 'so' adverb
-        'SON': 'son',  # Sonora - 'son' English word
-        'STEM': 'stem',  # Science, Technology, Engineering, Math - 'stem' plant part
-        'TAB': 'tab',  # Tabasco - 'tab' word
-        'TO': 'to',   # Toronto - 'to' preposition
-
-        'UP': 'up',   # Uttar Pradesh, India - 'up' preposition
-        'US': 'us',  # United States - 'us' English word
-        'VER': 'ver', # Veracruz (Mexican state) - 'ver' version abbreviation
-        'WA': 'wa',  # Washington - 'wa' Spanish dialect word
-    }
-
-    # Characters that trigger capitalization of the next word
-    CAPITALIZATION_TRIGGERS = {
-        '.',  # Period
-        '-',  # Dash/Hyphen
-        R['...'],  # Ellipsis
-        R[':'],    # Colon
-        R['|'],    # Pipe/Vertical bar
-        '¿',   # Spanish inverted question mark
-        '¡',   # Spanish inverted exclamation mark
-        *OPENING_BRACKETS  # All opening brackets
-    }
 
     # Debug mode flag
     _debug_level = get_debug_level()
@@ -1213,14 +1372,14 @@ class FileRenamer:
         # Store class variables
         self.__class__.USER_ABBREVIATIONS = self.user_abbreviations
         self.__class__.USER_PRESERVED_TERMS = self.user_preserved_terms
-        
+
         # Add user settings to the existing arrays
         if self.user_abbreviations:
-            self.debug_print(f"Adding {len(self.user_abbreviations)} user abbreviations", level='normal')
+            # self.debug_print(f"Adding {len(self.user_abbreviations)} user abbreviations", level='normal')
             self.ABBREVIATIONS.update(self.user_abbreviations)
-            
+
         if self.user_preserved_terms:
-            self.debug_print(f"Adding {len(self.user_preserved_terms)} user preserved terms", level='normal')
+            # self.debug_print(f"Adding {len(self.user_preserved_terms)} user preserved terms", level='normal')
             self.PRESERVED_TERMS.extend(self.user_preserved_terms)
 
         self.directory = Path(directory)
@@ -1758,7 +1917,7 @@ class FileRenamer:
                         re.match(r'^\d+[a-z]|^[a-z]+\d', word_lower) or      # Date formats
                         word_lower in self.STANDALONE_UNITS or                # Standalone units
                         word_lower.isdigit()):                               # Standalone digits for space-separated units
-                        self.debug_print(f"\n⮑ Unit check for: {part!r} (lower={word_lower!r})")
+                        self.debug_print(f"⮑ Unit check for: {part!r} (lower={word_lower!r})")
                         self.debug_print(f"  Context: parts[{i}] in {parts[max(0,i-1):min(len(parts),i+3)]!r}")
 
                         # Initialize unit tracking
