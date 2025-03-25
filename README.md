@@ -14,9 +14,34 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
   - Special terms like 'til and rock'n'roll
   - Common lowercase words (a, an, the, etc.)
   - Preserves common abbreviations (MD, M.D., PG-13, DES, NY)
+  - User's abbreviations can be added via settings.ini
   - Handles common military ranks (SGT, Sgt, Sgt.)
   - Handles common units (min, g, km, lbs, mpg or L/100km etc.)
   - Handles some date formats (2024-01-01, 2024/01/01, 2024.01.01, 2-23-2024 but doesn't validate dates)
+- Advanced character substitution system:
+  - Uses visually similar Unicode replacements that maintain readability
+  - Handles multiple forms of quotes, apostrophes, and slashes with context-aware replacements
+  - Preserves visual similarity while ensuring NTFS compatibility
+- Extensive unit pattern support:
+  - Weight units (mg, g, kg)
+  - Data units (KB, MB, GB, TB)
+  - Network speed (kbps, mbps, etc.)
+  - Frequency units (Hz, kHz, MHz)
+  - Time units (AM/PM formatting)
+  - Volume units (L, mL)
+  - Video resolutions (1080p, 4K)
+  - Electrical units (W, V, A, J, N)
+  - Temperature units
+  - Digital measurements (bit, fps, rpm)
+  - Speed and efficiency units (mph, mpg)
+- Ordinal number handling:
+  - Special handling for ordinal numbers (1st, 2nd, 3rd, 4th, etc.)
+  - Preserves proper lowercase formatting for these numbers
+- International support:
+  - Handles abbreviations for Mexican states
+  - Handles abbreviations for Canadian provinces
+  - Supports international time zones
+  - Recognizes some country codes
 - Handles special cases like multiple spaces and trailing punctuation
 - Normalizes whitespace (converts tabs, newlines, and other whitespace to spaces)
 - Intelligently handles compound abbreviations (e.g., Lt.Col becomes LtCol)
@@ -26,6 +51,30 @@ A Python script to safely rename files from Ext4 naming convention to NTFS-compa
 - Comprehensive test suite
 
 Note that UTF-8 (macOS, Linux) characters convert to different UTF-16 characters (NTFS) depending on the operating system and users's preferred encoding settings.
+
+## Additional Features
+
+- **Version Compatibility**
+  - Works with Python 3.6+ for broad compatibility across systems
+
+- **Automatic Settings Discovery**
+  - Searches for settings files in multiple standard locations automatically
+  - Provides a clear hierarchy for settings precedence
+  - Allows custom abbreviations and preserved phrases to be added via settings.ini
+
+- **Customizable Colorized Output**
+  - When colorama is installed, the debug output uses color coding to highlight character replacements (UTF-16 look-alike characters)
+  - Makes it easier to identify exactly what changes were made
+
+- **Comprehensive Abbreviation System**
+  - Handles various types of abbreviations including:
+    - Academic degrees
+    - Professional titles
+    - Military ranks
+    - Government organizations
+    - Technology standards
+    - Business terms
+  - Easily extensible with custom abbreviations via settings.ini
 
 ## Installation
 
@@ -104,10 +153,11 @@ My Product Name
    - Example: "AI" will always remain "AI" instead of being converted to "Ai"
    - These are recognized as complete words during filename processing
 
-2. **[preserved_terms]** - Phrases that should be preserved exactly as written
-   - Example: "Star Trek: The Next Generation" will remain unchanged
+2. **[preserved_terms]** - Phrases that should be preserved with their formatting
+   - Example: "Star Trek: The Next Generation" will maintain its capitalization and structure
    - These can include special characters, spaces, and punctuation
-   - The renamer will keep these terms exactly as defined
+   - NTFS-illegal characters will still be substituted with similar Unicode alternatives
+   - The renamer will preserve the overall appearance while ensuring compatibility
 
 ### Rules and Limitations
 

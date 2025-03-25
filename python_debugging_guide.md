@@ -91,6 +91,81 @@ python -m pytest test_file.py -v --capture=no
 python -m pytest test_file.py -v -s --cov=your_module
 ```
 
+## Configurable Debug Levels
+
+For more complex applications, it's helpful to implement multiple debug verbosity levels. This allows users to control how much information is displayed during execution.
+
+### Implementing Debug Levels
+
+Add this function to your code:
+
+```python
+def get_debug_level() -> str:
+    """
+    Get the debug level from environment. Returns one of:
+    - 'detail': Show all processing steps (RENAMER_DEBUG=detail)
+    - 'normal': Show key transformations only (RENAMER_DEBUG=1 or running tests)
+    - 'off': No debug output (default)
+    """
+    debug_env = os.environ.get('RENAMER_DEBUG')
+    if debug_env == 'detail':
+        return 'detail'
+    if 'unittest' in sys.modules or '--debug' in sys.argv or debug_env:
+        return 'normal'
+    return 'off'
+```
+
+### Using Debug Levels in Your Code
+
+You can then use the debug level to control output verbosity:
+
+```python
+debug_level = get_debug_level()
+
+# For important transformations (shown in 'normal' and 'detail' modes)
+if debug_level != 'off':
+    print(f"Transformed: {original} -> {transformed}")
+    
+# For detailed step-by-step information (only in 'detail' mode)
+if debug_level == 'detail':
+    print(f"Processing step: {step_name}")
+    print(f"Intermediate result: {intermediate_value}")
+```
+
+### Activating Different Debug Levels
+
+Users can activate different debug levels in several ways:
+
+1. **Command-line flag** (normal debug level):
+   ```bash
+   python your_script.py --debug
+   ```
+
+2. **Environment variable** (normal debug level):
+   ```bash
+   RENAMER_DEBUG=1 python your_script.py
+   ```
+
+3. **Detailed debug level**:
+   ```bash
+   RENAMER_DEBUG=detail python your_script.py
+   ```
+
+4. **No debug output** (default):
+   ```bash
+   python your_script.py
+   ```
+
+5. **Automatic in tests**:
+   Debug output is automatically enabled when running under unittest or pytest.
+
+### Benefits of Multiple Debug Levels
+
+1. **User control**: Users can choose how much information they want to see
+2. **Developer efficiency**: Detailed debugging information available when needed
+3. **Clean output**: Regular users aren't overwhelmed with technical details
+4. **Troubleshooting**: Detailed mode helps diagnose complex issues
+
 ## How This Works
 
 1. **sys.excepthook**: Catches any unhandled exceptions in your program
