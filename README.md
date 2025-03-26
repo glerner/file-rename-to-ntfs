@@ -1,7 +1,7 @@
 <!-- THIS FILE IS MANUALLY MAINTAINED; DO NOT SUGGEST CHANGES -->
-# File Renamer - Ext4 to NTFS
+# File Renamer - by George Lerner
 
-A Python script to safely rename files from Ext4 naming convention to NTFS-compatible format, while preserving UTF-8/UTF-16 characters.
+A Python script to safely rename files to NTFS-compatible format, while preserving UTF-8/UTF-16 characters. Keep professional title capitalization, remove extra punctuation, keep exact case for your abbreviations and acronyms.
 
 ## Features
 
@@ -113,11 +113,8 @@ python file_renamer.py --dry-run
 # Rename files in specific directory
 python file_renamer.py ~/my_files
 
-# Preview changes with debug output
-python file_renamer.py --dry-run --debug
-
 # Rename files in specific directory with debug output
-python file_renamer.py ~/my_files --debug
+python file_renamer.py ~/my_files --dry-run --debug
 
 # Use a custom settings file
 python file_renamer.py --settings ~/my_custom_settings.txt

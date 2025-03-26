@@ -109,6 +109,20 @@ class FileRenamer:
         SLASH_REPLACEMENT,  # for any slash in original
     }
 
+    # Characters to collapse when repeated (not illegal, but often repeated for emphasis)
+    # Format: 'character': (min_repeats, replacement)
+    # If replacement is None, collapse to a single instance of the original character
+    CHARS_TO_COLLAPSE = {
+        '-': (2, '—'),           # 2+ dashes become em dash (common typographic convention)
+        '_': (2, None),          # 2+ underscores collapse to single underscore
+        '=': (2, None),          # 2+ equals signs collapse to single equals
+        '+': (2, None),          # 2+ plus signs collapse to single plus
+        '#': (2, None),          # 2+ hash signs collapse to single hash
+        '*': (2, None),          # 2+ asterisks collapse to single asterisk
+        '~': (2, None),          # 2+ tildes collapse to single tilde
+        '!': (2, None),          # 2+ exclamation marks collapse to single exclamation
+    }
+
     # Character substitution mappings
     CHAR_REPLACEMENTS = {
         '"': '\uFF02',   # ASCII double quote replaced with Full-Width Quotation Mark
@@ -158,7 +172,6 @@ class FileRenamer:
         '﹠': '＆',  # Small Ampersand replaced with Full-Width Ampersand
         '﹢': '＆',  # Small And replaced with Full-Width Ampersand
         '$': '＄',  # Full Width Dollar Sign
-        '!': '!',   # Keep exclamation mark but collapse multiples
         '...': '…',  # Replace three or more periods with ellipsis character
     }
 
@@ -820,6 +833,66 @@ class FileRenamer:
                     self.debug_print(f"  Replace: '{original_char}' → '{colorize(replacement_char)}'", level='detail')
                     text = re.sub(f'{re.escape(original_char)}+', replacement_char, text)
 
+        # Handle repeated characters that aren't illegal but should be collapsed
+        text = self._collapse_repeated_characters(text)
+
+        return text
+
+    def _collapse_repeated_characters(self, text):
+        """
+        Replace sequences of repeated characters with appropriate replacements.
+
+        Handles:
+        - Repeated dashes (replaced with em dash)
+        - Repeated underscores (collapsed to single underscore)
+        - Other repeated characters defined in CHARS_TO_COLLAPSE
+        - Repeated emojis (collapsed to single emoji)
+
+        Args:
+            text: Text to process
+
+        Returns:
+            Modified text with repeated characters handled
+        """
+        # Handle characters with specific replacements
+        for char, (min_repeats, replacement) in self.CHARS_TO_COLLAPSE.items():
+            pattern = f'{re.escape(char)}{{{min_repeats},}}'
+            if replacement is None:
+                # Collapse to a single instance of the original character
+                if re.search(pattern, text):
+                    self.debug_print(f"  Collapse: '{char * min_repeats}+' → '{char}'", level='detail')
+                    text = re.sub(pattern, char, text)
+            else:
+                # Replace with the specified replacement
+                if re.search(pattern, text):
+                    self.debug_print(f"  Replace: '{char * min_repeats}+' → '{self.colorize(replacement)}'", level='detail')
+                    text = re.sub(pattern, replacement, text)
+
+        # Handle emojis (more complex pattern)
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F700-\U0001F77F"  # alchemical symbols
+            "\U0001F780-\U0001F7FF"  # Geometric Shapes
+            "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+            "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+            "\U0001FA00-\U0001FA6F"  # Chess Symbols
+            "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+            "\U00002702-\U000027B0"  # Dingbats
+            "\U000024C2-\U0001F251"
+            "]"
+        )
+
+        # Find all emoji sequences in the text
+        for match in re.finditer(r'((' + emoji_pattern.pattern + r')\2+)', text):
+            full_match = match.group(1)
+            single_emoji = match.group(2)
+            if full_match != single_emoji:  # Only replace if there are actually repeats
+                self.debug_print(f"  Collapse emoji: '{full_match}' → '{single_emoji}'", level='detail')
+                text = text.replace(full_match, single_emoji)
+
         return text
 
     def _preserve_special_terms(self, text):
@@ -1118,11 +1191,6 @@ class FileRenamer:
         text = re.sub(pattern4, lambda m: replace_date(m, 4), text)
 
         return text
-
-
-
-
-
 
 
     # Common units in filenames that need specific capitalization
@@ -2393,6 +2461,8 @@ def main():
                       help='Show what would be renamed without making changes')
     parser.add_argument('--debug', action='store_true',
                       help='Enable debug output')
+    parser.add_argument('--settings', dest='settings_path',
+                      help='Path to custom settings file')
 
     # Add a custom -? help option
     parser.add_argument('-?', action='help',
@@ -2404,6 +2474,27 @@ def main():
     if args.debug:
         FileRenamer._debug = True
         os.environ['RENAMER_DEBUG'] = 'detail'  # Enable detailed debug output
+
+    # Check if user is trying to run in the program's directory
+    directory_path = Path(args.directory).resolve()
+    program_dir = Path(__file__).parent.resolve()
+
+    if directory_path == program_dir:
+        print("WARNING: You are attempting to run this program on its own directory.")
+        print("This is not recommended as it could modify the program's own files.")
+        print("Please specify a different directory to process.")
+        print("Example: python file_renamer.py ~/Videos --dry-run")
+        return 1
+
+    # Check if directory exists before proceeding
+    if not directory_path.exists():
+        print(f"Error: Directory '{directory_path}' does not exist.")
+        print("Please provide a valid directory path.")
+        return 1
+    elif not directory_path.is_dir():
+        print(f"Error: '{directory_path}' is not a directory.")
+        print("Please provide a valid directory path.")
+        return 1
 
     renamer = FileRenamer(args.directory, dry_run=args.dry_run, settings_path=args.settings_path)
     changes = renamer.process_files()
