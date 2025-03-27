@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-File Renamer - Convert filenames from Ext4 (should also work with OS/X format), to NTFS-compatible format. Use English capitalization and punctuation rules for titles. Replace special characters (including characters illegal in NTFS) with similar Unicode characters.
+File Renamer - Improve filenames with capitalization and punctuation rules for titles.
+Replace special characters (including characters illegal in NTFS) with similar Unicode characters.
+Maintain contractions, possessives, and quoted phrases
+Handle common abbreviations, including dates, professional degrees, military ranks, and scientific units
+Specify your own abbreviations and acronyms, in a simple text file
 
-Ideal for small business professionals seeking efficient file management solutions and enhanced workflow organization.
+Ideal for small business professionals seeking efficient file renaming.
 
 This script safely renames files to be compatible with NTFS filesystem while preserving
 UTF-8/UTF-16 characters and applying title case formatting rules.
@@ -17,7 +21,6 @@ Future possible improvements:
 - Add option to convert to ASCII-only filenames (if needed for legacy systems)
 - Current implementation preserves UTF-8/UTF-16 which works well with modern systems, including media files from sources like YouTube. Consider exploring how to use other character mappings.
 - Designed for English-speaking users. Limited foreign language support currently included, with potential for future enhancements through community contributions.
-- Add configuration file support for customizing preserved terms, character replacements, and other settings
 
 Author: George Lerner with Cascade AI
 Date: 2025-01-27
@@ -214,13 +217,14 @@ class FileRenamer:
         'Cpl', 'Sgt', 'Lt', 'Capt', 'Col', 'Gen',  # Common ranks
         'Maj', 'Adm', 'Cmdr', 'Brig', # More ranks
         'USMC', 'USN', 'USAF',  # Service branches
+        'WW1', 'WW2',
 
         # Movie/TV Ratings (no periods)
         'TV', 'G', 'PG', 'PG-13', 'R', 'NC-17', 'TV-14', 'TV-MA', 'TV-PG', 'TV-Y',
         # not handled properly, gets broken up at hyphen into parts
 
         # TV Networks
-        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS', 'MSNBC',
+        'ABC', 'BBC', 'CBS', 'CNN', 'CW', 'HBO', 'NBC', 'PBS', 'CNBC', 'MSNBC',
         'TBS', 'TNT', 'USA', 'ESPN', 'MTV', 'TLC', 'AMC', 'O\'Donnell', 'O\'Reilly',
 
         # US States (excluding those that conflict with common words, see KEEP_CAPITALIZED_IF_ALLCAPS)
@@ -229,6 +233,7 @@ class FileRenamer:
         'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV',
         'NY', 'OK', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
         'VA', 'VT', 'WI', 'WV', 'WY',
+        'NYC', 'SF',
         # 'DE' Delaware conflicts with common Spanish word 'de'
         # 'HI', 'LA', 'MA', 'ME', 'OH', 'OR', 'PA' conflict with English words
 
@@ -321,7 +326,7 @@ class FileRenamer:
         'DIY', 'FAQ', 'ASAP', 'IMAX', 'AGT', 'BGT',
 
         # Software/Platforms
-        'WordPress', 'SEO', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'NoSQL', 'PostgreSQL', 'JavaScript', 'TypeScript',
+        'WordPress', 'SEO', 'iOS', 'macOS', 'SQL', 'NoSQL', 'MySQL', 'NoSQL', 'PostgreSQL', 'JavaScript', 'TypeScript', 'ChatGPT', 'GPT',
 
         # Apple products and special case words (merged from SPECIAL_CASE_WORDS)
         'iPad', 'iPhone', 'iPod', 'iTunes', 'iMac',
@@ -2412,9 +2417,12 @@ class FileRenamer:
 
         return result
 
-    def process_files(self) -> List[Tuple[str, str]]:
+    def process_files(self, batch_size=100) -> List[Tuple[str, str]]:
         """
         Process all files in the directory.
+
+        Args:
+            batch_size: Number of files to process before displaying progress
 
         Returns:
             List[Tuple[str, str]]: List of (original_name, new_name) pairs
@@ -2426,13 +2434,19 @@ class FileRenamer:
         """
         self.debug_print("Starting to process files in directory: {}".format(self.directory), level='normal')
         changes = []
+        processed_count = 0
 
         for item in self.directory.iterdir():
             if item.is_file():
                 original_name = item.name
                 self.debug_print(f"\n\nBefore clean_filename: {original_name!r}", level='normal')
                 new_name = self._clean_filename(original_name)
+                processed_count += 1
                 self.debug_print(f"After clean_filename: {original_name!r} -> {new_name!r}", level='normal')
+
+                # Display progress in batches
+                if processed_count % batch_size == 0:
+                    print(f"Processed {processed_count} files so far")
 
                 # Skip if no change needed
                 if original_name == new_name:
@@ -2463,6 +2477,8 @@ def main():
                       help='Enable debug output')
     parser.add_argument('--settings', dest='settings_path',
                       help='Path to custom settings file')
+    parser.add_argument('--batch-size', type=int, default=100,
+                      help='Display progress after processing this many files (default: 100)')
 
     # Add a custom -? help option
     parser.add_argument('-?', action='help',
@@ -2497,12 +2513,12 @@ def main():
         return 1
 
     renamer = FileRenamer(args.directory, dry_run=args.dry_run, settings_path=args.settings_path)
-    changes = renamer.process_files()
+    changes = renamer.process_files(batch_size=args.batch_size)
 
     if args.dry_run:
-        print("\nProposed changes (dry run):")
+        print("\nProposed changes (dry run):\n")
     else:
-        print("\nExecuted changes: (showing special character replacements in cyan)")
+        print("\nExecuted changes: (showing special character replacements in cyan)\n")
 
     # Track if any files were changed
     any_changes = False
